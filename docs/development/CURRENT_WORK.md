@@ -2,6 +2,16 @@
 
 Stand: 9. September 2026
 
+## R3.39 eingefroren: Storage-Generation vor Ersatz wirklich stilllegen
+
+Auf08c8c364 sauber inventarisiert. poll/up ignorieren die Ablehnung einer
+Terminierung und koennen die noch vorhandene Identitaet durch einen Neustart
+ersetzen. Der naechste zusammenhaengende Schnitt schliesst automatische und
+manuelle Stilllegung, Fristablauf, Reap und fehlgeschlagenen Start gemeinsam.
+Vertrag: STORAGE_GENERATION_RETIREMENT_CONTRACT.md;12 eingefrorene Gruppen.
+Noch keine Implementierungsabnahme. R3.6b bleibt ausdruecklich zurueckgestellt;
+persistenter Ring-3-Backend und JS-Schreibrechte folgen erst nach dieser Grenze.
+
 ## R3.38 abgenommen: gemeinsame Dateiobjekt-Lebensdauer
 
 Alle20 eingefrorenen Abnahmegruppen bestanden. VFS und Ring-3-Storage teilen

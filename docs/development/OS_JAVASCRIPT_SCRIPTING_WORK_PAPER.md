@@ -11,6 +11,11 @@ Ring-3-Objektbroker und alle zwölf Prüfgruppen. Nur ausdrücklich gewählte
 reguläre Dateien sind lesbar; persistente Schreib-/Verzeichnisrechte fehlen
 weiterhin und bleiben zwingende JS3-Folgearbeit vor JS4.
 
+R3.39 ist als naechste Voraussetzung eingefroren: alte Storage-Generation
+vor Ersatz widerrufen, quieszent machen und Reap nachweisen; bei Fristablauf
+Identitaet behalten und sperren. Erst danach persistenter Backend und explizite
+JS-Schreibrechte. Details/12 Abnahmegruppen im Retirement-Vertrag und der Queue.
+
 ## Ziel und Sicherheitsgrenze
 
 Eine gemeinsame QuickJS-Sprachimplementierung dient Browser-, Benutzer- und

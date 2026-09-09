@@ -145,3 +145,10 @@ Namespace-Transaktionen. Die freigegebene kalte Scheduler-Reparatur verhindert
 Wiederanlauf/Reap waehrend fremdem Cleanup; Taskauswahl/Abrechnung bleiben gleich.
 Native O0/O2, beide Images, Fault/Hang/Restart und bestehende JS-/Browsergaeste
 bestanden. Keine JS-Schreibrechte hinzugefuegt; Backendmigration bleibt Folgearbeit.
+
+Inventur auf08c8c364: Storage poll/up ignorieren eine abgelehnte Terminierung
+und koennen einen noch existierenden AP-Owner ersetzen. R3.39 schliesst zuerst
+diese gemeinsame Retirement-/Reap-Grenze; siehe
+[STORAGE_GENERATION_RETIREMENT_CONTRACT.md](STORAGE_GENERATION_RETIREMENT_CONTRACT.md).
+FAT12 und FAT32 besitzen unterschiedliche Journal-/Remapmodelle. Reuse des
+transportneutralen FAT32-Kerns allein uebertraegt keine Journalhoheit nach Ring3.
