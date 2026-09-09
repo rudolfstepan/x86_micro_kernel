@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-09: R3.41 accepted against the unchanged current17/17 groups plus9 additional groups after explicit user disposition of historical risks R341-H1/H2, NOT a claim that their causes are fixed. Acceptance archive: r341-journal-handoff/accepted-final; retain original failures/stash and corrected reference. R3.6b is formally active only; its existing browser-priority deferral and all VMware gates remain unchanged. Next substantive JS3 work requires defining the unified Ring-3 FAT32 writable-object/requalification package before implementation or JS write grants. Do not implement deferred VMware work ahead of that priority, start agents or push."
+active_id = "R3.42-fat32-writable-objects"
+next_user_request = "2026-09-09: R3.42 is the next single cohesive implementation package after accepted3e7c02ad. Read FAT32_WRITABLE_OBJECT_CONTRACT fully; implement actual writable FAT32 objects, complete input transport and fenced recovery/requalification together before JS write grants. Definition checkpoint first, then clean-main-worktree implementation with all27 frozen groups. Retain R3.41 accepted-final, corrected references, original stash and unresolved historical risks R341-H1/H2; no waiver for new failures. R3.6b remains queued/deferred with every requirement unchanged. Interactive main agent only, no routine handoff, visible VM, later-package implementation or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,123 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.42-fat32-writable-objects"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Stable Ring-3 FAT32 write objects with bounded progress and fenced requalification"
+scope = "Read FAT32_WRITABLE_OBJECT_CONTRACT fully. One object/transaction failure boundary: explicit rights and owned-pin admission, complete128KiB input transport, overwrite/append/zero-filled growth/incremental shrink/fsync, stable locator refresh and repair-only requalification. Existing regular files on ATA-PIO FAT32; no new persistent format, kernel filesystem parser, JS grant or later package."
+allowed_files = [
+  "automation/reist-s03b.toml",
+  "docs/development/CURRENT_WORK.md",
+  "docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md",
+  "docs/architecture/RING3_FILE_WRITE_CONTRACT.md",
+  "docs/architecture/FAT32_WRITABLE_OBJECT_CONTRACT.md",
+  "include/reist/abi/syscall.h",
+  "userspace/sdk/include/reist/abi/syscall.h",
+  "lib/libc/stdlib.h",
+  "userspace/sdk/include/x86os.h",
+  "scripts/generate_syscall_abi.py",
+  "include/kernel/file_object_guard.h",
+  "kernel/init/file_object_guard.c",
+  "include/kernel/storage_request_pool.h",
+  "kernel/init/storage_request_pool.c",
+  "include/kernel/storage_service.h",
+  "kernel/init/storage_service.c",
+  "include/kernel/storage_safety.h",
+  "kernel/init/storage_safety.c",
+  "include/kernel/filesystem_safety.h",
+  "kernel/init/filesystem_safety.c",
+  "kernel/syscall/syscall_table.c",
+  "fs/vfs/vfs.c",
+  "fs/vfs/vfs.h",
+  "fs/fat32/fat32_vfs_adapter.c",
+  "drivers/block/ata.c",
+  "drivers/block/ata.h",
+  "userspace/storage/include/reist/vfs_file_client.h",
+  "userspace/storage/lib/vfs_file_client.c",
+  "userspace/storage/include/reist/vfs_shadow_fat32.h",
+  "userspace/storage/lib/vfs_shadow_fat32.c",
+  "userspace/storage/include/reist/fat32_transaction.h",
+  "userspace/storage/lib/fat32_transaction.c",
+  "userspace/storage/include/reist/fat32_file_write.h",
+  "userspace/storage/lib/fat32_file_write.c",
+  "userspace/programs/storage_service.c",
+  "userspace/programs/fwritest.c",
+  "scripts/build_system_programs.py",
+  "scripts/build-windows.ps1",
+  "Makefile",
+  "test/test_fat32_writable_objects.py",
+  "test/fat32_writable_objects_host.c",
+  "test/test_reist_storage_request_pool.py",
+  "test/test_storage_request_pool_host.c",
+  "test/test_reist_vfs_file_client.py",
+  "test/test_vfs_file_client_host.c",
+  "test/test_reist_vfs_shadow_fat32.py",
+  "test/test_vfs_shadow_fat32_host.c",
+  "test/test_file_object_guard.py",
+  "test/file_object_guard_host.c",
+  "test/test_journal_handoff.py",
+  "test/journal_handoff_host.c",
+  "test/test_storage_retirement.py",
+  "test/storage_retirement_host.c",
+  "test/test_syscall_abi_source.py",
+  "test/test_script_domain.py",
+  "test/test_script_domain_host.c",
+  "test/test_reist_storage_domain.py",
+  "test/test_reist_storage_service.py",
+  "test/test_reist_storage_recovery.py",
+  "scripts/run_qemu_fat32_writable_objects.py",
+  "scripts/verify_fat32_write_artifacts.py",
+  "scripts/run_qemu_fat32_write_performance.py"
+]
+invariants = [
+  "Ring0 mediates bounded identity/range/input/recovery-token mechanisms only; FAT planning, journal evidence and qualification policy stay in Ring3. Reuse existing RSTJ core/formats/20-entry capacity and four flush barriers. No SYS_WRITE or old raw-write fallback, no implicit WRITE in old DATA7/ALL15 or JS/Script domains.",
+  "Keep syscalls0..130/count131 and all old fixed-size wrappers/frames/descriptors. Append versioned operations/structs, reject malformed inputs before publication. Two128KiB bulk buffers, eight requests/two per client,16 objects/four per client and protected records<=64 bytes stay bounded; no changed restart/retirement budgets or renewable5s leases.",
+  "Exact owned pin stays present; no reopen/drop/repin and no exemption for all same-client pins. Bind original request deadline, cancellation, media and owner generations before each effect. Durable progress is explicit; resize_step is not partial POSIX ftruncate. UNKNOWN/lost reply fences, never auto-replays or regrants.",
+  "Repair-only transport while ordinary writes remain fenced. Retire/reap old owner, verify recovery and stable media before fresh writable publication. Old handles/mounts remain stale; corruption/exhaustion/partial publication keeps fences and cannot clear another unsafe resource.",
+  "No arbitrary MB file-size limit, per-byte RPC or per-sector implicit flush. Bounded resumable Ring3 scans/caches and exact transaction-capacity planning; preserve ordinary ATA/journal, scheduler/CPU-local/framebuffer paths. Only enumerated cold recovery hooks may change ATA mediation.",
+  "Clean visible main worktree after definition commit, one package, no agents/visible VMs/native crash dialogs/push. Preserve accepted R3.41 sources/artifacts and historical failed records; open-risk disposition never waives a new failure. No JS4 or deferred VMware implementation."
+]
+targeted_tests = [
+  "python test/test_fat32_writable_objects.py -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_reist_storage_request_pool.py -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_shadow_fat32.py -v",
+  "python test/test_file_object_guard.py -v",
+  "python test/test_journal_handoff.py -v",
+  "python test/test_storage_retirement.py -v",
+  "python scripts/generate_syscall_abi.py --check",
+  "python test/test_syscall_abi_source.py -v",
+  "python test/test_script_domain.py -v",
+  "python test/test_reist_storage_domain.py -v",
+  "python test/test_reist_storage_service.py -v",
+  "python test/test_reist_storage_recovery.py -v",
+  "python test/test_reist_undo_journal.py -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_namespace.py -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v",
+  "python scripts/measure_cpp_baseline.py --host-test test/test_ata_multiple.py -v",
+  "python test/test_benchmark_source.py -v"
+]
+package_tests = [
+  ".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",
+  ".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"
+]
+runtime_tests = [
+  "python scripts/verify_fat32_write_artifacts.py --evidence build/codex-agent/r342-fat32-write/artifacts",
+  "python scripts/run_qemu_fat32_writable_objects.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r342-fat32-write/guest",
+  "python scripts/run_qemu_fat32_recovery_admission.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r342-fat32-write/legacy-recovery",
+  "python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r342-fat32-write/js-file.log",
+  "python scripts/run_qemu_js_service.py --restricted-worker --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r342-fat32-write/js-service.log",
+  "python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r342-fat32-write/browser.log",
+  "python scripts/run_qemu_fat32_write_performance.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r342-fat32-write/performance"
+]
+acceptance = "All27 frozen groups. Actual O0/O2 transport/guard/planner/journal/requalification and every fault/barrier cut; large/fragmented/empty and mirrored-FAT variants, explicit durable progress and unchanged old rights. Both reference builds/matching kernels/all payloads; only STORAGE, enumerated file-client consumers and new FWRITEST may change. Real shell file-object dispatch, fault/hang/cancel/lost reply/reap/recovery/exhaustion with whole-media oracles, stale rejection and independent root/shell liveness in headless1024MiB QEMU. Existing FAT32 recovery, JS-file/restricted-worker/browser guests and paired baseline/candidate benchmark. No hardware power-loss/WCET/VMware throughput/JS write claim. Review/archive before done/next transition and local commit; deferred VMware priority remains binding."
+stop_conditions = ["Unattributed or overlapping change", "Required source outside allowed_files", "Failed gate without focused correction", "Need for a new persistent orphan/journal format", "Unresolved allocation ownership, generation or fence-publication authority", "Need to weaken resource/restart limits or protected hotpaths"]
+commit_message = "feat: add bounded Ring-3 FAT32 writable file objects"
+definition_note = "Definition-only continuation on clean3e7c02ad. Inventory groups owned-pin admission, complete input, all data/size variants and uncertain-outcome requalification in one vertical slice. No runtime source change or gate pass is asserted by the definition commit. The17 existing file-client consumers are frozen in FAT32_WRITABLE_OBJECT_CONTRACT; all other prior payloads remain protected."
 
 [[packages]]
 id = "R3.41a-network-arp-lifecycle"
@@ -2448,7 +2565,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

@@ -36,9 +36,13 @@ nach ausdruecklicher Benutzerfreigabe unter den offenen Altrisiken R341-H1/H2
 im Handoff-Vertrag. Die historischen Fehlerursachen sind nicht als behoben
 anzusehen. Tokengebundene128KiB-IO, vier Barrieren und die durchgaengige
 maximal5s-Reservation sind qualifiziert; keine neuen JS-Schreibrechte.
-Als naechstes den einheitlichen FAT32-Schreibobjektbackend mit festen Writes,
-Append/Growth/Truncate/fsync und expliziter Wiederqualifikation definieren und
-abnehmen; erst danach Schreib-Capabilities delegieren. JS4 und die weiterhin
+Der einheitliche FAT32-Schreibobjektbackend ist jetzt als R3.42 definiert:
+[FAT32_WRITABLE_OBJECT_CONTRACT.md](../architecture/FAT32_WRITABLE_OBJECT_CONTRACT.md).
+Writes, Append, zero-filled Growth, inkrementelles Resize und fsync teilen die
+stabile Objekt-/Transaktionsgrenze mit Bulk-Eingabe und Wiederqualifikation.
+Resize meldet dauerhaften Fortschritt explizit, statt partielles ftruncate zu
+behaupten.27 Pruefgruppen sind eingefroren; noch keine Implementierungsabnahme.
+Erst danach explizite Schreib-Capabilities delegieren. JS4 und die weiterhin
 zurueckgestellte VMware-Pointerabnahme werden nicht vorgezogen.
 
 ## Ziel und Sicherheitsgrenze

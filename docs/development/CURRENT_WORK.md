@@ -2,6 +2,27 @@
 
 Stand: 9. September 2026
 
+## R3.42 definiert: schreibbare FAT32-Objekte und Wiederqualifikation
+
+Sauberer Ausgangspunkt3e7c02ad. Der naechste zusammenhaengende JS3-Backend-
+Schnitt ist in [FAT32_WRITABLE_OBJECT_CONTRACT.md](../architecture/FAT32_WRITABLE_OBJECT_CONTRACT.md)
+festgelegt: eigener Schutz-Pin bleibt erhalten, vollstaendige Bulk-Eingabe,
+Overwrite/Append/Nullfuellung/Growth/Resize/fsync sowie Recovery bei weiter
+gesperrten normalen Schreibzugriffen. Lange Ressourcen verwenden explizite
+dauerhafte Teilschritte; inkrementelles Resize wird nicht als ftruncate benannt.
+
+Queue: R3.42 aktiv,27 eingefrorene Pruefgruppen. R3.6b wieder queued, seine
+Zurueckstellung und saemtliche VMware-Anforderungen unveraendert. Noch keine
+Laufzeitimplementierung, neuen JS-Rechte oder bestandenen R3.42-Gates. Nur
+Vertrag/Queue/Dokumentation werden im Definitionscheckpoint geaendert; keine
+unnoetigen Build-/Gastkampagnen fuer diese reine Definition.
+
+Die17 direkt mit der Dateiclientbibliothek gebauten Programme sind explizit
+inventarisiert. Spaetere Payload-Aenderungen dort muessen aus dieser Bibliothek
+erklaerbar sein; kein pauschaler Browser-/Desktop-Umbau. BENCHMARK/CURL/JSTEST/
+JSWORK/REIST und alle anderen unbeteiligten Payloads bleiben geschuetzt.
+R3.41-Belege,100 Referenzartefakte, Stash und offene Altrisiken bleiben erhalten.
+
 ## R3.41 abgenommen mit ausdruecklich offenen Altrisiken
 
 Die Ring-3-Journalhoheit und durchgaengige Guard/VFS/ATA-Deadline sind umgesetzt.

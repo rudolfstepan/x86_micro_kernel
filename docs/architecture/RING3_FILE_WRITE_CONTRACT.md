@@ -77,7 +77,16 @@ coherent cleanup changes only two headers.105 reference files archived.
 Only STORAGE.PRG changed among92 programs; both kernels unchanged. The next
 section remains future requirements, not an implemented write API.
 
-## Next cohesive write slice (requirements, not an active package)
+## Cohesive write requirements and active R3.42 definition
+
+After the accepted lifetime/retirement/recovery/handoff prerequisites, the
+default FAT32 implementation is now frozen as R3.42 in
+[FAT32_WRITABLE_OBJECT_CONTRACT.md](FAT32_WRITABLE_OBJECT_CONTRACT.md).
+Its owned-pin admission, bulk input, all data/size variants and explicit
+requalification share one package and27 gates. This is a definition, not an
+implemented writable backend or JS grant. Incremental resize reports durable
+steps explicitly; it is not called POSIX ftruncate. The historical inventories
+below remain evidence of why those prerequisites were required.
 
 Use POSIX terminology for open, write/pwrite, lseek, fstat, ftruncate and
 fsync: byte offsets/counts, explicit access rights, errors versus short writes,
