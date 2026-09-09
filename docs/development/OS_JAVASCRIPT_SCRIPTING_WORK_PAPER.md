@@ -17,11 +17,12 @@ behalten und sperren. Echte1-/4-CPU-Gaeste, JS-Datei-Runner und Browser bestehen
 Als naechstes persistenter Backend und danach explizite JS-Schreibrechte.
 Details/Belege im Retirement-Vertrag, CURRENT_WORK und der Queue.
 
-R3.40 sichert als konkret nachgewiesene Persistenzvoraussetzung zuerst den
-vorhandenen transportneutralen FAT32-Recovery-Kern ab: alle Before-Images vor
-Schreibwirkungen pruefen, Journal-Selbstziele/Duplikate ablehnen und laufenden
-Owner bei Reattach-Ablehnung erhalten. Zehn Gruppen sind eingefroren. Dies ist
-noch kein Ring-3-Schreibbackend; dessen exklusive Journalhoheit bleibt notwendig.
+R3.40 ist mit allen zehn Gruppen abgenommen: vorhandener transportneutraler
+FAT32-Recovery-Kern prueft alle Before-Images vor Schreibwirkungen, lehnt
+Journal-Selbstziele/Duplikate ab und erhaelt den laufenden Owner bei Reattach-
+Ablehnung. Native O0/O2, beide Images, fuenf echte FAT32-Gastfaelle und bestehende
+JS-Datei-/Browsergaeste bestehen. Kein neuer Puffer/Schreib-Hotpath. Dies ist noch
+kein Ring-3-Schreibbackend; dessen exklusive Journalhoheit bleibt notwendig.
 
 ## Ziel und Sicherheitsgrenze
 

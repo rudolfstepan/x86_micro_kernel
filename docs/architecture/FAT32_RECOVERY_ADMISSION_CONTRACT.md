@@ -77,3 +77,20 @@ exclusive journal handoff, raw mediation and cache invalidation before moving
 ownership. Then add service-owned writable objects and whole bounded transaction
 admission (write/grow/truncate/append together), explicit partial progress and
 lost-reply fencing. Only afterward delegate explicit JS write capabilities.
+
+## Accepted evidence, 2026-09-09
+
+Contract checkpoint b37f6c36; all ten frozen groups pass. Evidence and complete
+command/time map are in CURRENT_WORK and build/codex-agent/r340-fat32-recovery.
+Native O0/O2 each pass103 case groups (including every recovery write cut,
+retry and idempotence), existing complete FAT32 image fault campaign passes.
+Both final builds/new kernels/all93 unchanged payloads and unchanged normal
+journal/scheduler hotpaths verified. Five real1024MiB QEMU cases/25 commands pass
+in92.321s; three rejected whole disks stay byte-identical across repeated mount
+and Storage restart, while independent root reads and userspace shell survive.
+Existing JS-file and browser guests pass.144 hash-verified reference files kept.
+Initial native failures and later nine-reserved-sector boundary failure remain.
+Two earlier guest failures were new fixture/parser errors (hdd1 mount naming,
+complete supervisor-generation restart record), corrected with native negatives;
+requirements and deadlines unchanged. No new authority or physical durability
+claim; the separate Ring-3 read parser still needs journal ownership/admission.

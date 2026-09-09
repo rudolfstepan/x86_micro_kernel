@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.40-fat32-recovery-admission"
-next_user_request = "2026-09-09: Continue JS3 persistent backend. R3.40 first repairs the inventoried portable FAT32 journal admission failures before reuse: no partial undo on malformed evidence, no journal self-target or owner loss. Default FAT32 backend/exclusive journal handoff and JS writes remain subsequent work. R3.6b stays execution-deferred. Direct main worktree, no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-09: R3.40 FAT32 recovery admission accepted, all10 groups. Continue the cohesive default-FAT32 Ring-3 writable backend contract/implementation: exclusive journal ownership handoff, raw mediation/cache invalidation and writable object admission must precede JS write grants. Do not add a second journal owner or substitute EXT2-only writes for default FAT images. R3.6b remains execution-deferred despite formal queue transition. Direct main worktree, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.40-fat32-recovery-admission"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Validate the complete portable FAT32 undo recovery before effects"
@@ -26,6 +26,7 @@ runtime_tests = ["python scripts/verify_fat32_recovery_artifacts.py --evidence b
 acceptance = "All10 frozen groups. Actual core O0/O2 malformed admission and every recovery write cut/retry; existing complete FAT32 whole-image fault campaign. Both reference images with new matching kernels and all93 unchanged PRGs; unchanged scheduler and normal journal hotpaths. Headless1024MiB guest valid v1/v2 and late-CRC/mirror/duplicate rejection on standard-size private FAT32 media, exact whole-disk results, repeated legacy mount refusal and independent shell/read across Storage restart. Existing JS-file/browser guests. Archive/review before done and local commit. No hardware durability/performance or Ring-3 journal-admission claim."
 stop_conditions = ["Unattributed or overlapping changes", "Source outside allowed_files required", "Failed gate without focused correction", "New persistent format or journal ownership needed"]
 commit_message = "fix: validate complete FAT32 recovery before disk effects"
+evidence_note = "All10 groups passed on b37f6c36 contract. Final native3 tests/103 cases per O0/O2 including all recovery write cuts/retry; existing whole-image FAT32 campaign passed. Both final reference builds/new matching kernels, all93 unchanged PRGs and unchanged scheduler/normal journal hotpaths verified. Final guest-accepted/result.json passes5 cases/25 commands in92.321s: valid v1/v2 restored, three rejected media byte-identical across repeated mount and Storage restart, normal shell/root read alive. JS-file131.186s and browser101.520s wrappers pass.144 hash-verified reference archive files. Initial red88/102 failures, later nine-reserved-sector red and two guest fixture/parser failures retained; final native-parser-final.log passes. Guest mount name corrected to observed hdd1; restart parser now validates complete supervisor-generation record with negative tests. Frozen gates/limits unchanged. No Ring-3 journal ownership, writable object, JS write, hardware durability or new performance claim."
 
 [[packages]]
 id = "R3.39-storage-generation-retirement"
@@ -2406,7 +2407,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

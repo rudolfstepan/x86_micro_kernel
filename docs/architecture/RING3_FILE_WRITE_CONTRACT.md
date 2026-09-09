@@ -166,3 +166,10 @@ Der aktuelle Raw-Syscall durchlaeuft den alten Journalowner; ein zweites Journal
 in Storage waere unzulaessig. Default-FAT32 ist der erste Backend-Kandidat,
 FAT12 hat ein separates Journal-/Remapprotokoll. Die exklusive Uebergabe und
 Objekt-Schreibadmission bleiben der anschliessende Implementierungsschnitt.
+
+R3.40 ist mit allen zehn Gruppen abgenommen: vollstaendige Undo-Admission vor
+Schreibwirkungen, v1/v2-Zielschutz, begrenzte Geometrie und erhaltener Pending-
+Owner. Native O0/O2 und echte FAT32-Gaeste beweisen Recovery/Retry sowie exakt
+unveraenderte abgelehnte Medien auch ueber Mount-Wiederholung/Storage-Neustart.
+Normale Journal-Schreibpfade/alle93 PRGs bleiben unveraendert. Das implementiert
+weder Ring-3-Journalhoheit noch Schreibobjekte oder JS-Schreibrechte.

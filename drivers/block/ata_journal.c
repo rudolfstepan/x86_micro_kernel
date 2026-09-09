@@ -359,6 +359,15 @@ bool ata_undo_journal_write_sector(ata_undo_journal_t *journal,
     return result;
 }
 
+static bool recovery_target_valid(const ata_undo_journal_t *journal,
+                                   uint32_t target) {
+    return target >= journal->volume_start_lba &&
+        target < journal->volume_end_lba &&
+        !(target >= journal->header_lba &&
+          target < journal->data_lba + ATA_JOURNAL_MAX_ENTRIES) &&
+        (journal->mirror_lba == 0U || target != journal->mirror_lba);
+}
+
 bool ata_undo_journal_attach(ata_undo_journal_t *journal,
                              unsigned short base, bool is_master,
                              uint32_t partition_lba, uint32_t volume_sectors,
@@ -366,11 +375,13 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
     if (!transport_ready(journal)) return false;
     bool result = true;
     uint32_t inherited_depth = journal->transaction_depth;
-    journal->enabled = false;
     if (inherited_depth != 0U && journal->entry_count != 0U) return false;
-    if (reserved_sectors <= ATA_JOURNAL_DATA_OFFSET || volume_sectors == 0U ||
-        partition_lba > UINT32_MAX - ATA_JOURNAL_DATA_OFFSET ||
-        volume_sectors > UINT32_MAX - partition_lba) return true;
+    journal->enabled = false;
+    /* Validate the declared extent before even probing its reserved sectors.
+     * A small unmarked volume is allowed, but malformed geometry is not. */
+    if (volume_sectors == 0U || reserved_sectors > volume_sectors ||
+        volume_sectors > UINT32_MAX - partition_lba) return false;
+    if (reserved_sectors <= ATA_JOURNAL_HEADER_OFFSET) return true;
 
     uint32_t header_lba = partition_lba + ATA_JOURNAL_HEADER_OFFSET;
     uint32_t data_lba = partition_lba + ATA_JOURNAL_DATA_OFFSET;
@@ -385,7 +396,12 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
     bool primary_marked = primary_read &&
         primary->magic == ATA_JOURNAL_MAGIC;
     bool mirror_marked = mirror_read && mirror->magic == ATA_JOURNAL_MAGIC;
-    if (!primary_marked && !mirror_marked) return true;
+    if (!primary_marked && !mirror_marked)
+        return primary_read && (mirror_lba == 0U || mirror_read);
+    /* Even a v1 upgrade publishes v2. Its entire undo extent must fit before
+     * any recovery target or CLEAN header can be written. */
+    if (reserved_sectors < ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES)
+        return false;
 
     journal->base = base;
     journal->is_master = is_master;
@@ -437,8 +453,7 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
         journal->sequence = old->sequence;
         if (old->state == ATA_JOURNAL_ACTIVE) {
             uint8_t *data = journal->scratch.data;
-            result = old->target_lba >= journal->volume_start_lba &&
-                old->target_lba < journal->volume_end_lba &&
+            result = recovery_target_valid(journal, old->target_lba) &&
                 read_sector(journal, base, data_lba, data, is_master) &&
                 journal_crc32(data, ATA_JOURNAL_SECTOR_SIZE) ==
                     old->data_crc32 &&
@@ -446,23 +461,28 @@ bool ata_undo_journal_attach(ata_undo_journal_t *journal,
         }
         if (result) result = clear_journal(journal, false);
     } else {
-        result = reserved_sectors >
-                     ATA_JOURNAL_DATA_OFFSET + ATA_JOURNAL_MAX_ENTRIES - 1U &&
-                 record_valid(record);
+        result = record_valid(record);
         journal->sequence = record->sequence;
-        for (uint32_t i = record->entry_count; result && i > 0U; --i) {
-            uint32_t index = i - 1U;
+        /* Admission is all-before-effects: never discover a corrupt later
+         * entry after restoring an earlier sector. Reuse fixed instance-owned
+         * undo storage; the transport owner serializes attach/transactions. */
+        for (uint32_t index = 0U; result && index < record->entry_count; ++index) {
             uint32_t target = record->entries[index].target_lba;
-            uint8_t *data = journal->scratch.data;
-            result = target >= journal->volume_start_lba &&
-                target < journal->volume_end_lba &&
-                !(target >= header_lba &&
-                  target < data_lba + ATA_JOURNAL_MAX_ENTRIES) &&
+            uint8_t *data = journal->undo_data[index];
+            result = recovery_target_valid(journal, target);
+            for (uint32_t prior = 0U; result && prior < index; ++prior)
+                result = record->entries[prior].target_lba != target;
+            result = result &&
                 read_sector(journal, base, data_lba + index, data,
                             is_master) &&
                 journal_crc32(data, ATA_JOURNAL_SECTOR_SIZE) ==
-                    record->entries[index].data_crc32 &&
-                write_sector(journal, base, target, data, is_master);
+                    record->entries[index].data_crc32;
+        }
+        for (uint32_t i = record->entry_count; result && i > 0U; --i) {
+            uint32_t index = i - 1U;
+            uint32_t target = record->entries[index].target_lba;
+            uint8_t *data = journal->undo_data[index];
+            result = write_sector(journal, base, target, data, is_master);
         }
         if (result &&
             (record->state == ATA_JOURNAL_ACTIVE || repair_headers))

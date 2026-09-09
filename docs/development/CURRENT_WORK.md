@@ -2,14 +2,61 @@
 
 Stand: 9. September 2026
 
-## R3.40 aktiv: gesamte FAT32-Recovery vor Schreibwirkungen pruefen
+## R3.40 abgenommen: gesamte FAT32-Recovery vor Schreibwirkungen pruefen
 
-Inventur auf sauberem c1130a39 findet partielle Undo-Schreibwirkungen vor einem
-spaeteren CRC-/Lesefehler, ungeschuetzte Journalziele und Ownerverlust bei
-abgelehntem Reattach. Der transportneutrale bestehende Kern wird vor seiner
-Ring-3-Wiederverwendung abgesichert. Vertrag: FAT32_RECOVERY_ADMISSION_CONTRACT;
-zehn eingefrorene Gruppen in der Queue. Default-FAT32-Backend, exklusive
-Journaluebergabe und JS-Schreibrechte bleiben danach erforderlich.
+Alle zehn eingefrorenen Gruppen bestanden; sauberer Ausgangspunkt c1130a39,
+Vertragscheckpoint b37f6c36. Der transportneutrale bestehende FAT32-Undo-Kern
+prueft Geometrie, alle Ziele/Duplikate und alle Before-Images vor Schreibwirkung.
+Header, Undo-Bereich und vorhandener Spiegel sind geschuetzt, auch fuer v1.
+Ein Reattach mit laufenden Aenderungen erhaelt den bisherigen Owner bytegleich.
+Eine v1-Aufwertung braucht den gesamten v2-Reservierungsbereich. Ein lesbarer
+Header ohne Platz fuer Undo wird nicht mehr als fehlendes Journal behandelt.
+Vorhandene feste Puffer, Diskformat, Headerauswahl und normaler Schreibpfad bleiben.
+
+Belege unter `build/codex-agent/r340-fat32-recovery/`:
+
+| Gruppe | PASS / Sekunden | Finaler Beleg |
+| --- | --- | --- |
+| test_fat32_recovery_admission.py -v |3 Tests,103 native Faelle je O0/O2 /1.945 |native-parser-final.log |
+| test_reist_undo_journal.py -v |11 Tests /0.153 |journal-final.log |
+| measure_cpp_baseline.py --host-test test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v |1 kompletter FAT32-Image-Fault-Campaign /1.972 |filesystem-final.log |
+| test_fat32_image_fault_campaign.py -v |8 Tests /0.133 |targeted-3.log |
+| test-reist-package.ps1 -Target vmware -Video vga |80.895 |package-vmware-final.log |
+| test-reist-package.ps1 -Target qemu -Video vga |82.275 |package-qemu-final.log |
+| verify_fat32_recovery_artifacts.py --evidence .../artifacts |1.719 |artifacts/protected.json |
+| run_qemu_fat32_recovery_admission.py --evidence .../guest-accepted |5 Faelle,25 Shellbefehle /92.321 |guest-accepted/result.json |
+| run_qemu_js_runner.py --file-capabilities |131.186 |compatibility-0.log; js-runner.log |
+| run_qemu_browser_external.py |101.520 |compatibility-1.log; browser.log |
+
+Vollstaendige Argumente in Queue/JSON. Der finale Gast-Belegordner heisst
+guest-accepted; Anforderungen/300s-Gesamtlimit und75s je Fall bleiben erhalten.
+Native Tests unterbrechen jeden Recovery-Schreibschritt vor/nach Wirkung und
+beweisen erneute vollstaendige Recovery und Idempotenz. Im echten1024MiB-Gast
+werden v1/v2 korrekt rueckgesetzt; late-crc, mirror-target und duplicate-target
+bleiben jeweils auf dem gesamten Medium bytegleich. Zweimaliges Mount-Ablehnen,
+Storage-Neustart und unabhaengige Root-Lesezugriffe funktionieren im normalen
+Userspace-Shellprozess. Die Medien haben jeweils65525 FAT32-Datencluster.
+
+Erhaltene Fehlerbelege: ../r340-fat32-recovery-red.log mit88/102 Fehlern je
+Optimierungsstufe im alten Kern; extent-red.log fuer den danach ergaenzten
+Neun-Sektor-Randfall. Nach dessen Korrektur wurden betroffene native Gruppen und
+beide Images erneut gebaut; die vorherigen Logs bleiben erhalten. guest/result.json
+scheiterte am falschen neuen Testpfad ata1 statt dem realen hdd1; guest-final/
+scheiterte am vom neuen Pruefer noch nicht gelesenen Generation-Feld des ansonsten
+erfolgreichen svcctl-Records. Nur der neue Pruefer wurde korrigiert: kompletter
+Record fuer Komponente5 mit gueltiger32-Bit-Generation, Negativtests fuer falsche
+Komponente/Null/Ueberlauf/Anhang. Beide frueheren Datentraeger waren bereits exakt
+korrekt wiederhergestellt. Kein Testkriterium oder Betriebssystempfad abgeschwaecht.
+
+144 Dateien im SHA256-geprueften accepted-reference-Archiv: beide finalen Images,
+Kernel, alle93 unveraenderten PRGs und Belege. Normale Journal-Read/Write/Commit-
+Funktionen und Scheduler/CPU-Local bleiben quelltextgleich zum Ausgangspunkt.
+Kein neuer VMware-Durchsatz- oder Hardware-Stromausfallnachweis.
+
+Offen: Default-FAT32-Ring-3-Backend mit exklusiver Journaluebergabe, Raw-Mediation,
+Cacheinvalidierung und schreibbaren stabilen Objekten; erst danach JS-Schreibrechte.
+Der separate Ring-3-Leseparser besitzt dadurch noch keine Journal-Admission.
+R3.6b bleibt trotz formaler Queue-Weiterschaltung explizit zurueckgestellt.
 
 ## R3.39 abgenommen: alte Storage-Generation vor Ersatz wirklich stilllegen
 
