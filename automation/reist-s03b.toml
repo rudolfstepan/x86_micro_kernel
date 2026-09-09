@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.41a-network-arp-lifecycle"
-next_user_request = "2026-09-09: Implement only the approved independent Ring-3 ARP lifecycle prerequisite, then return to R3.41. Preserve its owned stash c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a and16/17 evidence; no false handoff acceptance. R3.6b deferred. Direct main-worktree execution, no agents or push."
+active_id = "R3.41-fat32-ring3-handoff"
+next_user_request = "2026-09-09: R3.41a ARP prerequisite accepted with13/13 groups. Next run resumes the owned R3.41 stash c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a with explicit CURRENT_WORK reconciliation; preserve the accepted REIST.PRG and rebase only its protected payload hash. Original17 handoff gates and all prior evidence remain; no false handoff acceptance. R3.6b deferred. Direct main-worktree execution, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,12 +13,12 @@ push = false
 
 [[packages]]
 id = "R3.41a-network-arp-lifecycle"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Contain expired ARP requests in the Ring-3 network service"
 scope = "Read NETWORK_ARP_LIFECYCLE_CONTRACT fully. Correct only Ring-3 request correlation/refusal handling. R3.41 is reversibly shelved; no kernel/ABI/driver changes or larger budgets."
-allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/architecture/NETWORK_ARP_LIFECYCLE_CONTRACT.md","userspace/programs/reist_probe.c","test/test_network_arp_lifecycle.py","test/network_arp_lifecycle_host.c","scripts/run_qemu_network_arp_lifecycle.py","scripts/verify_network_arp_artifacts.py","test/test_reist_arp_resolution.py"]
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/architecture/NETWORK_ARP_LIFECYCLE_CONTRACT.md","userspace/programs/reist_probe.c","test/test_network_arp_lifecycle.py","test/network_arp_lifecycle_host.c","scripts/run_qemu_network_arp_lifecycle.py","scripts/verify_network_arp_artifacts.py","test/test_reist_arp_resolution.py","test/test_reist_probe_domain.py"]
 invariants = ["Kernel validates current request/generation before transmission or binding; local pending correlation grants no authority. No fallback/retry of consumed capability, new ABI or kernel/driver change.", "Expired/denied ARP operations do not kill the service; malformed/integrity failures retain fail-closed behavior. Stale input cannot clear a newer correlation. Fixed storage and original250ms/batch/health/restart budgets.", "Clean main-worktree implementation on e44215a9. Preserve R3.41 stash c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a and all evidence. No agents, visible VMs, host dialogs, later-package implementation or push."]
 targeted_tests = ["python test/test_network_arp_lifecycle.py -v","python test/test_reist_arp_resolution.py -v","python test/test_reist_arp_learning.py -v","python test/test_network_progress.py -v","python test/test_reist_probe_domain.py -v","python test/test_benchmark_source.py -v"]
 package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
@@ -27,10 +27,12 @@ acceptance = "All13 groups, actual O0/O2 behavior and delayed/lost ARP guest evi
 stop_conditions = ["Unattributed changes", "Required source outside allowed_files", "Unresolved gate failure without focused correction", "Need to weaken kernel authority or enlarge timing/restart budgets"]
 commit_message = "fix: contain expired ARP requests in the Ring-3 network service"
 definition_note = "Explicit independent prerequisite approved after native expiry->successor exit16 proof. R3.41 remains unaccepted, shelved and queued; resume only after this package is accepted."
+scope_amendment = "2026-09-09 user approved test/test_reist_probe_domain.py only to update its three stale profile constants to the already accepted2/130/5. No kernel change or assertion removal; all13 frozen groups remain mandatory."
+evidence_note = "All13 groups passed. Native O0/O2 actual dispatch69 checks each; both NICs lost two ARP replies then recovered with stable PID/component generation, fresh PING/root/shell. Both reference builds, unchanged kernels and92 unchanged PRGs verified; only REIST.PRG changes. TCP integrity/cancellation, recovery and external-script browser guests pass. Final domain test9/9 in0.124s after approved three-value correction; original failure retained. Accepted-reference and acceptance.json under build/codex-agent/r341a-network-arp/. No larger budget, new ABI, hardware performance or R3.41 completion claim. R3.41 stash retained; no later-package source restored in this run."
 
 [[packages]]
 id = "R3.41-fat32-ring3-handoff"
-status = "queued"
+status = "active"
 phase = "post-s0"
 risk = "high"
 title = "Bounded journal ownership handoff from legacy FAT32 to Ring-3 Storage"

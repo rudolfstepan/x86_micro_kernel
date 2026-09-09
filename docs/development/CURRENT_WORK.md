@@ -2,15 +2,15 @@
 
 Stand: 9. September 2026
 
-## R3.41a aktiv: eigenstaendige ARP-Lifecycle-Reparatur
+## R3.41a abgenommen: eigenstaendige ARP-Lifecycle-Reparatur
 
 Vom Benutzer freigegebene Netzwerkvoraussetzung. R3.41 bleibt mit16/17
 bestandenen Gruppen unabgenommen; alle31 eigenen Dateiaenderungen sind
 reversibel im Stash c8cd59ea26548e97ad1a7e9ef69a9a4d4421f22a gesichert.
 Manifest/Hashes, Kandidatenimages, korrigierte FAT32-Gastpruefung und alle
 Fehlbelege unter build/codex-agent/r341-journal-handoff/ bleiben erhalten.
-Kein Implementierungscommit fuer R3.41. Der Arbeitsbaum ist vor der neuen
-Definition sauber auf e44215a9; akzeptierte Laufzeit ist weiterhin7d87119c.
+Kein Implementierungscommit fuer R3.41. Der Arbeitsbaum war vor der neuen
+Definition sauber auf e44215a9; Laufzeitbaseline war7d87119c.
 
 NETWORK_ARP_LIFECYCLE_CONTRACT friert ausschliesslich die Ring-3-Korrelation
 abgelaufener/verweigerter ARP-Anfragen ein, mit13 nativen/Build-/Gastgruppen.
@@ -18,7 +18,53 @@ Neue Kernel-, Treiber-, ABI- oder Quotenanpassungen sind nicht freigegeben.
 Nach separater Abnahme zur R3.41-Queue zurueckkehren, dessen Stash nicht
 loeschen und dieses spaetere Paket nicht im selben Lauf implementieren.
 
-## R3.41 definiert, noch nicht implementiert: Ring-3-Journal-Uebergabe
+Die Ring-3-Korrelation wird erst nach erfolgreicher Kernelzulassung ersetzt.
+EAGAIN/EACCES/EIO/ETIMEDOUT beenden die einzelne ARP-Operation, nicht den Dienst.
+Veraltete Antworten koennen keine neuere Korrelation loeschen; unbekannte
+Integritaetsfehler bleiben fatal. Kernel, ABI, Treiber,250ms-Deadline,
+Health-/Restartbudgets und normaler TCP-/Receive-Pfad bleiben unveraendert.
+
+Belege unter build/codex-agent/r341a-network-arp/: Der native Rotlauf hat
+40 Fehler bei69 Pruefungen je O0/O2; final targeted-0-blank-final.log besteht
+vier Tests mit je69 nativen Pruefungen. guest-blank/result.json besteht auf
+E1000 und RTL8139 (24.144s/24.134s): jeweils zwei wirklich unbeantwortete
+ARP-Anfragen, drei kernelvermittelte Uebertragungen, zwei erfolgreiche PINGs,
+Root-Lesen und Shell weiter verfuegbar; drei identische PID5/Generation1-
+Beobachtungen und kein Ersatz des Netzwerkdienstes. Fruehere Gastlaeufe
+scheiterten am neuen Pruefer (Caption-Zeilenumbruch bzw. doppelte Zaehlung
+nach Leerzeile), nicht am Dienst. Beide Fehler mit Negativtests korrigiert;
+guest/ und guest-wrap/ sowie die roten Parserbelege bleiben erhalten.
+
+VMware-/QEMU-Paketbuild bestanden (139.137s/85.859s). artifacts/protected.json
+bestaetigt beide unveraenderten Kernel und92 unveraenderte PRGs gegen R3.40;
+nur REIST.PRG ist neu. Benchmark-Quelltest bestanden, kein neuer
+Durchsatz-/Hardware- oder WCET-Nachweis.
+
+13/13 eingefrorene Gruppen bestanden. TCP-Gastgruppe besteht auf beiden NICs
+(129.663s), einschliesslich 1MiB-Integritaet, Backpressure, Timeout, Reset,
+Abbruch/Reap, frischer Verbindung und CURL-Datei. Recovery-Smoke besteht
+(51.939s), Browser mit externen Scripts/Redirect/Cache/Reflow/Abbruch/Recovery
+ebenfalls (105.603s). Befehle, Zeiten und finale Logs in acceptance.json;
+aus unveraenderten Binaerdateien allein wird keine Performancegarantie abgeleitet.
+
+Der Benutzer hat die gezielte Erweiterung um test/test_reist_probe_domain.py
+freigegeben. Ausschliesslich seine drei veralteten Sollwerte1/126/4 wurden an
+den bereits abgenommenen Kernelstand2/130/5 angepasst. Der gezielte Wiederlauf
+besteht9/9 Tests in0.124s (targeted-4-approved.log); keine Assertion entfernt,
+keine Rechte oder Kernelquellen geaendert. Produktionscode und die Belege der
+anderen zwoelf Gruppen blieben unveraendert, kein Neubuild noetig.
+targeted-4.log, candidate-status.json und pending-reference/ bleiben als
+unabgenommene Zwischenbelege erhalten. accepted-reference/ enthaelt die finalen
+Images, Kernel,93 Programme, Quellen und SHA256-geprueften Belege.
+
+Queue: R3.41a done, R3.41 active. Der R3.41-Stash bleibt erhalten und wurde
+in diesem Lauf nicht angewendet. Naechster Lauf: eigenen Kandidaten aufnehmen,
+CURRENT_WORK gezielt abgleichen, akzeptiertes REIST.PRG beibehalten und nur
+dessen Hash im R3.41-Artefaktschutz auf die neue Referenz setzen. Die urspruenglichen
+17 Gruppen und ihre Grenzen bleiben; betroffene finale Image-/Browserbelege
+muessen vor R3.41-Abnahme erneut erbracht werden.
+
+## R3.41 unabgenommen gesichert: Ring-3-Journal-Uebergabe
 
 Sauberer Ausgangspunkt7d87119c. Inventur bestaetigt die bestehende5s-Reservation
 als Wiederverwendungsgrenze; BLOCK_WRITE85 journalisiert aber weiterhin durch
@@ -26,12 +72,15 @@ den Legacy-Owner. FAT32 haelt FSInfo-/Clusterhinweise ueber Aktivierungen hinweg
 FAT32_RING3_HANDOFF_CONTRACT beschreibt den zusammenhaengenden naechsten Schnitt:
 expliziter Journalmodus, tokengenaue Rohvermittlung, sichere Legacy-Rueckgabe,
 Cacheinvalidierung und Ring-3-Transaktionsadapter. Noch keine neue Autoritaet
-oder Laufzeitfunktion implementiert/abgenommen. Die37 erlaubten Dateien und17
-Abnahmegruppen sind jetzt in der Queue eingefroren. Fuer Performance von Beginn
+oder Laufzeitfunktion durch den Definitionscheckpoint abgenommen. Die
+urspruengliche Implementierung ist inzwischen als31-Dateien-Kandidat mit16/17
+Gruppen im oben genannten Stash gesichert; aktueller Umfang40 Dateien und17
+Abnahmegruppen. Fuer Performance von Beginn
 an gebundene128KiB-Batches und vier explizite Persistenzbarrieren, kein
-512-Byte-Einzelaufruf mit Flush pro Sektor. Die letzte abgenommene Laufzeit bleibt
-7d87119c. Als Naechstes direkt die native Regression und diesen Schnitt umsetzen;
-keine weitere breite Inventurrunde. R3.6b bleibt zurueckgestellt.
+512-Byte-Einzelaufruf mit Flush pro Sektor. Die abgenommene Laufzeit entspricht
+jetzt R3.40 plus eigenstaendiger R3.41a-ARP-Reparatur. Im naechsten Lauf den Kandidaten wieder aufnehmen,
+CURRENT_WORK abgleichen und betroffene finale Image-/Browserbelege erneuern.
+Keine weitere breite Inventurrunde. R3.6b bleibt zurueckgestellt.
 
 ## R3.40 abgenommen: gesamte FAT32-Recovery vor Schreibwirkungen pruefen
 

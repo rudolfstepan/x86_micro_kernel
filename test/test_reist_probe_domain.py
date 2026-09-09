@@ -33,9 +33,9 @@ class ReistProbeDomainContractTests(unittest.TestCase):
         cls.supervisor = read("kernel/init/supervisor.c")
 
     def test_profile_is_versioned_fixed_and_attached_before_publication(self):
-        self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 1U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 126U", self.process_h)
-        self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 4U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_PROFILE_VERSION 2U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_LIMIT 130U", self.process_h)
+        self.assertIn("PROCESS_DOMAIN_SYSCALL_WORDS 5U", self.process_h)
         for field in ("version", "struct_size", "kind", "allowed_syscalls"):
             self.assertIn(field, self.process_h)
         self.assertRegex(

@@ -52,6 +52,10 @@ grant. Existing malformed-input/integrity rejection and recovery budgets remain.
    Peer framing, queues and logs are bounded; retain failed and successful
    transcripts, packet/event evidence and exact image hash. Each NIC <=90s;
    aggregate <=180s. Native compile <=90s/run <=10s, no host error dialogs.
+   The lifecycle witness combines identical live PS PID, unchanged ready
+   component generation and absence of the mandatory replacement record in
+   the complete bounded transcript. Component generation is not mislabeled
+   as a directly read process generation.
 6. Both reference builds and93 actual packaged programs: only REIST.PRG may
    change from the accepted R3.40 payloads; both kernels and all other payloads
    must remain byte-identical. No benchmark/throughput claim. Existing TCP
@@ -59,6 +63,13 @@ grant. Existing malformed-input/integrity rejection and recovery budgets remain.
    browser gates must pass without budget increases or assertion relaxation.
 
 ## Completion and return to R3.41
+
+Approved scope amendment, 9 September2026: include
+test/test_reist_probe_domain.py to correct exactly three stale expected
+constants: profile version1 ->2, syscall limit126 ->130, bitmap words4 ->5.
+These are already the accepted kernel values, not new rights or ABI changes.
+Keep every assertion and all13 frozen gate groups. Preserve the original
+failed test evidence; rerun only this affected gate after the correction.
 
 Freeze13 groups in the queue before edits. Inspect source/scope and archive
 accepted artifacts, then commit only this independent package and return the

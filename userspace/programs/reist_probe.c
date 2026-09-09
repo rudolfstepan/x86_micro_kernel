@@ -28,6 +28,12 @@
 #define REIST_TCP_FLAG_FIN 0x01U
 #define REIST_TCP_FLAG_SYN 0x02U
 
+static bool network_arp_refused(int result) {
+    /* Expired/single-use authority and bounded transport refusal are failed
+     * operations, not process corruption. Unknown errors remain fatal. */
+    return result == -11 || result == -13 || result == -5 || result == -110;
+}
+
 static uint64_t probe_deadline_after(uint64_t now_ms, uint32_t interval_ms) {
     return UINT64_MAX - now_ms < interval_ms
         ? UINT64_MAX : now_ms + interval_ms;
@@ -867,7 +873,19 @@ int main(int argc, char **argv) {
                 };
                 for (uint32_t index = 0U; index < 6U; ++index)
                     binding.mac[index] = request.payload[26U + index];
-                if (x86os_reist_commit_arp_binding(&binding) != 0) return 13;
+                int binding_result = x86os_reist_commit_arp_binding(&binding);
+                if (binding_result != 0) {
+                    if (!network_arp_refused(binding_result)) return 13;
+                    /* The matching local correlation is no longer usable.
+                     * Mismatched replies were rejected above, so this cannot
+                     * clear a newer admitted probe. Never publish a binding
+                     * or a stale console success after mediation refuses it. */
+                    pending_network_probe_id = 0U;
+                    pending_network_request = 0U;
+                    if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                            X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0) return 14;
+                    continue;
+                }
                 if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_HEADER,
                                        ethertype) != 0) return 9;
                 if (direct_resolution) {
@@ -899,8 +917,7 @@ int main(int argc, char **argv) {
                 continue;
             }
             if (network != NULL && request.payload[3] == 'A') {
-                if (request.length != 26U ||
-                    pending_network_probe_id != 0U) return 16;
+                if (request.length != 26U) return 16;
                 uint32_t target_ip = ((uint32_t)request.payload[4] << 24U) |
                     ((uint32_t)request.payload[5] << 16U) |
                     ((uint32_t)request.payload[6] << 8U) |
@@ -931,7 +948,17 @@ int main(int argc, char **argv) {
                     .request_id = request_id,
                     .target_ip = target_ip,
                 };
-                if (x86os_reist_send_arp_request(&resolution) != 0) return 17;
+                int resolution_result = x86os_reist_send_arp_request(&resolution);
+                if (resolution_result != 0) {
+                    if (!network_arp_refused(resolution_result)) return 17;
+                    if (x86os_reist_report(X86OS_REIST_REPORT_NETWORK_DEGRADED,
+                            X86OS_REIST_NETWORK_DEGRADED_SEMANTIC) != 0) return 14;
+                    continue;
+                }
+                /* The kernel admitted this exact successor after retiring
+                 * any predecessor. Only now replace local correlation; no
+                 * stale request can overwrite a newer outstanding probe. */
+                pending_network_request = 0U;
                 pending_network_probe_id = network_probe_id;
                 continue;
             }
