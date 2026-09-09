@@ -35,6 +35,8 @@
 #define TASK_REAPING 5
 #define TASK_HANDOFF 6
 #define TASK_PREPARED 7
+#define TASK_TERMINATION_PENDING 8
+#define TASK_TERMINATING 9
 #define TASK_CPU_NONE (-1)
 #define TASK_CPU_MASK_BSP 1U
 
@@ -155,6 +157,9 @@ void scheduler_preempt_enable(void);
 bool scheduler_preempt_is_disabled(void);
 bool scheduler_can_sleep(void);
 void scheduler_terminate_task(int task_id);
+/* Caller holds Process lock. Reserve only a quiescent matching generation. */
+bool scheduler_reserve_termination_locked(int task_id, const Process *owner,
+                                          uint32_t generation);
 int wait_queue_block_locked(wait_queue_t *queue, task_block_kind_t kind);
 int wait_queue_block_until_locked(wait_queue_t *queue,
                                   task_block_kind_t kind,

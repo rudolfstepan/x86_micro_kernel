@@ -12,6 +12,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 #include "drivers/bus/drives.h"
+#include "include/reist/abi/syscall.h"
 
 // Forward declarations
 struct vfs_node;
@@ -105,6 +106,12 @@ typedef struct vfs_filesystem_ops {
     int (*touch)(struct vfs_filesystem* fs, const char* path);
     int (*stat)(struct vfs_filesystem* fs, const char* path, vfs_dir_entry_t* stat);
     int (*space)(struct vfs_filesystem* fs, vfs_space_info_t* info);
+    /* Pure projections from already validated mount/node state; no I/O.
+     * first_sector is relative to fs->drive, like existing backend I/O.
+     * The VFS mediator adds a partition offset exactly once. */
+    int (*object_key)(const vfs_node_t* node, reist_file_object_key_t* key);
+    int (*volume_extent)(const struct vfs_filesystem* fs,
+                          uint32_t* first_sector, uint32_t* sector_count);
 } vfs_filesystem_ops_t;
 
 // ===========================================================================
@@ -118,6 +125,7 @@ typedef struct vfs_filesystem {
     vfs_node_t* root;                 // Root directory node
     uint32_t open_nodes;              // Nodes currently owned by VFS callers
     bool maintenance_blocked;         // Reject new opens during exclusive maintenance
+    bool object_media_revoked;        // Mount binding lost; close/unmount remain possible
 } vfs_filesystem_t;
 
 // ===========================================================================
@@ -167,6 +175,25 @@ typedef struct {
 
 // Initialization
 void vfs_init(void);
+/* Internal trusted-service entry. Public syscall mediation must separately
+ * validate caller authority and the complete user input/output range. */
+int vfs_file_object_guard_request(reist_file_object_guard_request_t* request,
+                                  int service_pid, uint32_t service_generation);
+int vfs_file_object_guard_cancel_undelivered(
+    const reist_file_object_guard_request_t* result,
+    int service_pid, uint32_t service_generation);
+void vfs_file_object_guard_process_cleanup(int pid, uint32_t generation);
+/* I/O/fault notification is bounded and never takes the VFS mutex. */
+void vfs_file_object_guard_media_changed(uint32_t resource);
+int vfs_file_object_guard_poll(uint64_t now_ms);
+int vfs_file_object_guard_fenced(uint32_t* mask);
+/* Success holds the operation mutex through ONE bounded raw write/flush.
+ * Normal mounted volumes require the current service's mutation reservation;
+ * existing exclusive maintenance/unmounted paths retain their mediation. */
+int vfs_file_object_guard_io_begin(uint32_t resource, uint32_t sector,
+                                  bool flush, int service_pid,
+                                  uint32_t service_generation);
+void vfs_file_object_guard_io_end(void);
 
 // Filesystem registration
 int vfs_register_filesystem(const char* name, vfs_filesystem_ops_t* ops);

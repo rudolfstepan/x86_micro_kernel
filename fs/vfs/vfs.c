@@ -10,6 +10,14 @@
 #include "lib/libc/string.h"
 #include "lib/libc/stdio.h"
 #include "lib/libc/stdlib.h"
+#if !defined(KERNEL_HOST_TEST) || defined(FILE_OBJECT_GUARD_VFS_TEST)
+#define VFS_FILE_OBJECT_GUARD 1
+#include "include/kernel/file_object_guard.h"
+#ifndef KERNEL_HOST_TEST
+#include "include/kernel/storage_service.h"
+#include "kernel/proc/process.h"
+#endif
+#endif
 #ifndef KERNEL_HOST_TEST
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/panic.h"
@@ -43,6 +51,232 @@ typedef struct {
 
 static vfs_open_node_record_t open_node_records[VFS_OPEN_NODE_CAPACITY];
 
+#ifdef VFS_FILE_OBJECT_GUARD
+static file_object_guard_t vfs_object_guards;
+static int vfs_guard_mutation_error;
+static bool vfs_guard_initialized;
+static volatile uint32_t vfs_guard_pending_media;
+#ifdef KERNEL_HOST_TEST
+extern drive_t* vfs_guard_platform_drive(uint32_t resource);
+extern uint64_t vfs_guard_platform_now(void);
+extern bool vfs_guard_platform_live(int pid, uint32_t generation);
+extern bool vfs_guard_platform_available(uint32_t resource);
+extern bool vfs_guard_platform_fence(uint32_t resource);
+#else
+static drive_t* vfs_guard_platform_drive(uint32_t resource) {
+    return drive_count > 0 && resource < (uint32_t)drive_count &&
+        resource < FILE_OBJECT_GUARD_RESOURCES ? &detected_drives[resource] : NULL;
+}
+static uint64_t vfs_guard_platform_now(void) { return pit_monotonic_ms(); }
+static bool vfs_guard_platform_live(int pid, uint32_t generation) {
+    return process_file_object_owner_live(pid, generation);
+}
+static bool vfs_guard_platform_available(uint32_t resource) {
+    return storage_service_resource_available(resource);
+}
+static bool vfs_guard_platform_fence(uint32_t resource) {
+    return storage_service_report_media_failure(resource, true);
+}
+#endif
+
+static int vfs_guard_errno(int result) {
+    return result == 0 ? VFS_OK : result == -REIST_EBUSY || result == -REIST_EAGAIN
+        ? VFS_ERR_BUSY : VFS_ERR_IO;
+}
+
+static int vfs_guard_drive_index(const drive_t* drive) {
+    for (uint32_t i = 0; i < FILE_OBJECT_GUARD_RESOURCES; ++i)
+        if (vfs_guard_platform_drive(i) == drive) return (int)i;
+    return -1;
+}
+
+static uint64_t vfs_guard_drive_size(const drive_t* drive) {
+    if (!drive) return 0;
+    if (drive->sectors) return drive->sectors;
+    if (drive->type == DRIVE_TYPE_FDD) {
+        uint64_t tracks = (uint64_t)drive->cylinder * drive->head;
+        if (drive->sector && tracks > UINT64_MAX / drive->sector) return 0;
+        return tracks * drive->sector;
+    }
+    return 0;
+}
+
+static const drive_t* vfs_guard_physical(const drive_t* drive) {
+    if (!drive) return NULL;
+    if (drive->type != DRIVE_TYPE_PARTITION)
+        return drive->type == DRIVE_TYPE_ATA || drive->type == DRIVE_TYPE_AHCI ||
+            drive->type == DRIVE_TYPE_FDD ? drive : NULL;
+    const drive_t* parent = vfs_guard_platform_drive(drive->parent_resource);
+    if (!parent || parent->type == DRIVE_TYPE_PARTITION || !drive->sectors ||
+        (uint64_t)drive->lba_offset + drive->sectors > vfs_guard_drive_size(parent))
+        return NULL;
+    return vfs_guard_physical(parent);
+}
+
+static bool vfs_guard_same_physical(const drive_t* a, const drive_t* b) {
+    a = vfs_guard_physical(a); b = vfs_guard_physical(b);
+    if (!a || !b || a->type != b->type) return false;
+    if (a->type == DRIVE_TYPE_ATA) return a->base == b->base && a->is_master == b->is_master;
+    if (a->type == DRIVE_TYPE_AHCI)
+        return a->ahci_controller == b->ahci_controller && a->ahci_port == b->ahci_port;
+    if (a->type == DRIVE_TYPE_FDD) return a->fdd_drive_no == b->fdd_drive_no;
+    return false;
+}
+
+static int vfs_guard_extent(const vfs_filesystem_t* fs, uint32_t* first,
+                             uint32_t* count) {
+    if (!fs || !fs->drive || !fs->ops || !fs->ops->volume_extent ||
+        fs->ops->volume_extent(fs, first, count) != VFS_OK || !*count)
+        return -REIST_ENOTSUP;
+    const drive_t* physical = vfs_guard_physical(fs->drive);
+    uint64_t logical_end = (uint64_t)*first + *count;
+    if (!physical || logical_end > vfs_guard_drive_size(fs->drive)) return -REIST_EINVAL;
+    uint64_t absolute_first = *first;
+    if (fs->drive->type == DRIVE_TYPE_PARTITION) absolute_first += fs->drive->lba_offset;
+    if (absolute_first > UINT32_MAX) return -REIST_EINVAL;
+    *first = (uint32_t)absolute_first;
+    uint64_t end = absolute_first + *count;
+    if (!physical || end > vfs_guard_drive_size(physical) ||
+        (fs->drive->type == DRIVE_TYPE_PARTITION &&
+         (*first < fs->drive->lba_offset ||
+          end > (uint64_t)fs->drive->lba_offset + fs->drive->sectors))) return -REIST_EINVAL;
+    return 0;
+}
+
+static int vfs_guard_resource(const vfs_filesystem_t* fs, uint32_t* resource) {
+    uint32_t first, count;
+    int result = vfs_guard_extent(fs, &first, &count);
+    if (result) return result;
+    int canonical = vfs_guard_drive_index(fs->drive);
+    if (canonical < 0) return -REIST_ENODEV;
+    for (vfs_mount_t* m = mount_list; m; m = m->next) {
+        if (m->fs == fs || !vfs_guard_same_physical(fs->drive, m->fs->drive)) continue;
+        uint32_t other_first, other_count;
+        result = vfs_guard_extent(m->fs, &other_first, &other_count);
+        if (result) return result;
+        if ((uint64_t)first >= (uint64_t)other_first + other_count ||
+            (uint64_t)other_first >= (uint64_t)first + count) continue;
+        if (first != other_first || count != other_count || strcmp(fs->name, m->fs->name))
+            return -REIST_EINVAL;
+        int index = vfs_guard_drive_index(m->fs->drive);
+        if (index < 0) return -REIST_ENODEV;
+        if (index < canonical) canonical = index;
+    }
+    *resource = (uint32_t)canonical;
+    return 0;
+}
+
+static bool vfs_guard_kind(const vfs_filesystem_t* fs, uint32_t kind) {
+    return (kind == REIST_FILE_OBJECT_FAT12 && !strcmp(fs->name, "fat12")) ||
+        (kind == REIST_FILE_OBJECT_FAT32 && !strcmp(fs->name, "fat32")) ||
+        (kind == REIST_FILE_OBJECT_EXT2 && !strcmp(fs->name, "ext2"));
+}
+
+static int vfs_guard_normalize(reist_file_object_key_t* key) {
+    drive_t* requested = vfs_guard_platform_drive(key->resource);
+    if (!requested || !vfs_guard_physical(requested)) return -REIST_ENODEV;
+    vfs_filesystem_t* selected = NULL;
+    for (vfs_mount_t* m = mount_list; m; m = m->next) {
+        if (m->fs->drive == requested) { selected = m->fs; break; }
+    }
+    if (!selected) {
+        uint32_t requested_first = requested->type == DRIVE_TYPE_PARTITION ? requested->lba_offset : 0;
+        uint64_t requested_count = vfs_guard_drive_size(requested);
+        for (vfs_mount_t* m = mount_list; m; m = m->next) {
+            if (!vfs_guard_same_physical(requested, m->fs->drive)) continue;
+            uint32_t first, count;
+            if (vfs_guard_extent(m->fs, &first, &count) ||
+                first != requested_first || count != requested_count) continue;
+            if (selected && selected != m->fs) return -REIST_EINVAL;
+            selected = m->fs;
+        }
+    }
+    if (!selected || !vfs_guard_kind(selected, key->kind)) return -REIST_ENOTSUP;
+    if (selected->object_media_revoked) return -REIST_EIO;
+    if (selected->maintenance_blocked) return -REIST_EBUSY;
+    return vfs_guard_resource(selected, &key->resource);
+}
+
+static int vfs_guard_node_key(const vfs_node_t* node, reist_file_object_key_t* key) {
+    if (!node || !node->fs || !node->fs->ops || !node->fs->ops->object_key ||
+        node->fs->ops->object_key(node, key) != VFS_OK) return -REIST_ENOTSUP;
+    int result = vfs_guard_resource(node->fs, &key->resource);
+    if (!result && !file_object_guard_key_valid(key)) result = -REIST_EIO;
+    return result;
+}
+
+/* Reject an overlapping second mount before its backend can recover media. */
+static int vfs_guard_mount_admission(const drive_t* drive) {
+    const drive_t* physical = vfs_guard_physical(drive);
+    uint64_t count = vfs_guard_drive_size(drive);
+    uint32_t first = drive->type == DRIVE_TYPE_PARTITION ? drive->lba_offset : 0;
+    if (!physical || !count || count > UINT32_MAX ||
+        (uint64_t)first + count > vfs_guard_drive_size(physical)) return VFS_ERR_INVALID;
+    for (vfs_mount_t* m = mount_list; m; m = m->next) {
+        if (!vfs_guard_same_physical(drive, m->fs->drive)) continue;
+        uint32_t other_first, other_count;
+        if (vfs_guard_extent(m->fs, &other_first, &other_count)) return VFS_ERR_BUSY;
+        if ((uint64_t)first < (uint64_t)other_first + other_count &&
+            (uint64_t)other_first < (uint64_t)first + count) return VFS_ERR_BUSY;
+    }
+    return VFS_OK;
+}
+#endif
+
+#ifdef VFS_FILE_OBJECT_GUARD
+static int vfs_guard_open_check(vfs_filesystem_t* fs) {
+    if (fs->object_media_revoked) return VFS_ERR_IO;
+    uint32_t resource;
+    int result = vfs_guard_resource(fs, &resource);
+    if (!result) result = file_object_guard_can_open(&vfs_object_guards, resource,
+                                                     vfs_guard_platform_now());
+    return vfs_guard_errno(result);
+}
+
+static int vfs_guard_pin_count(vfs_filesystem_t* fs, uint32_t* count) {
+    uint32_t resource;
+    int result = vfs_guard_resource(fs, &resource);
+    if (!result) result = file_object_guard_count(&vfs_object_guards, resource,
+                                                  count, vfs_guard_platform_now());
+    return vfs_guard_errno(result);
+}
+
+static void vfs_guard_publish_fences(void) {
+    if (!vfs_guard_initialized) return;
+    static uint32_t reported;
+    uint32_t mask = 0;
+    int result = file_object_guard_fenced(&vfs_object_guards, &mask);
+    if (result == -REIST_EBUSY) return;
+    for (uint32_t i = 0; i < FILE_OBJECT_GUARD_RESOURCES; ++i) {
+        uint32_t bit = 1U << i;
+        if ((mask & bit) && !(reported & bit) && vfs_guard_platform_drive(i) &&
+            vfs_guard_platform_fence(i)) reported |= bit;
+    }
+}
+
+static int vfs_guard_apply_media_changes(void) {
+    if (!vfs_guard_initialized) return 0;
+    uint32_t pending = __atomic_exchange_n(&vfs_guard_pending_media, 0U, __ATOMIC_ACQ_REL);
+    for (uint32_t i = 0; i < FILE_OBJECT_GUARD_RESOURCES; ++i) {
+        uint32_t bit = 1U << i;
+        if (!(pending & bit)) continue;
+        int result = file_object_guard_revoke_media(&vfs_object_guards, i);
+        if (result) {
+            __atomic_fetch_or(&vfs_guard_pending_media, pending, __ATOMIC_RELEASE);
+            return result;
+        }
+        /* A republished device is not the mount that produced existing legacy
+         * nodes (including its shared root). Never refresh their binding in
+         * place. Close then explicit unmount/remount establishes a new one. */
+        for (vfs_mount_t* m = mount_list; m; m = m->next)
+            if (vfs_guard_drive_index(m->fs->drive) == (int)i)
+                m->fs->object_media_revoked = true;
+        pending &= ~bit;
+    }
+    return 0;
+}
+#endif
+
 static int vfs_open_record_free_slot(void) {
     for (uint32_t index = 0U; index < VFS_OPEN_NODE_CAPACITY; ++index)
         if (open_node_records[index].node == NULL) return (int)index;
@@ -69,6 +303,8 @@ static bool vfs_filesystem_has_registered_nodes(vfs_filesystem_t* fs) {
 static kernel_mutex_t vfs_operation_mutex = KERNEL_MUTEX_INIT;
 #endif
 
+static void vfs_operation_end(void);
+
 static bool vfs_operation_begin(void) {
 #ifndef KERNEL_HOST_TEST
     KASSERT_NOT_IRQ();
@@ -77,17 +313,244 @@ static bool vfs_operation_begin(void) {
                irq_enabled() ? 1U : 0U, irq_in_context() ? 1U : 0U,
                scheduler_preempt_is_disabled() ? 1U : 0U);
     }
-    return kernel_mutex_lock_for(&vfs_operation_mutex,
-                                 VFS_OPERATION_LOCK_TIMEOUT_MS) == 0;
-#else
-    return true;
+    if (kernel_mutex_lock_for(&vfs_operation_mutex,
+                              VFS_OPERATION_LOCK_TIMEOUT_MS) != 0) return false;
 #endif
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (vfs_guard_apply_media_changes()) { vfs_operation_end(); return false; }
+#endif
+    return true;
 }
 
 static void vfs_operation_end(void) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    vfs_guard_publish_fences();
+#endif
 #ifndef KERNEL_HOST_TEST
     KASSERT_NOT_IRQ();
     kernel_mutex_unlock(&vfs_operation_mutex);
+#endif
+}
+
+#ifdef VFS_FILE_OBJECT_GUARD
+static bool vfs_guard_try_begin(void) {
+#ifndef KERNEL_HOST_TEST
+    if (kernel_mutex_lock_for(&vfs_operation_mutex, 0) != 0) return false;
+#endif
+    if (vfs_guard_apply_media_changes()) { vfs_operation_end(); return false; }
+    return true;
+}
+#endif
+
+void vfs_file_object_guard_media_changed(uint32_t resource) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (resource >= FILE_OBJECT_GUARD_RESOURCES) return;
+    uint32_t mask = 1U << resource;
+    const drive_t* changed = vfs_guard_platform_drive(resource);
+    for (uint32_t i = 0; changed && i < FILE_OBJECT_GUARD_RESOURCES; ++i)
+        if (vfs_guard_same_physical(changed, vfs_guard_platform_drive(i))) mask |= 1U << i;
+    __atomic_fetch_or(&vfs_guard_pending_media, mask, __ATOMIC_RELEASE);
+#else
+    (void)resource;
+#endif
+}
+
+void vfs_file_object_guard_process_cleanup(int pid, uint32_t generation) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!vfs_guard_initialized || !vfs_guard_try_begin()) return;
+    (void)file_object_guard_cleanup(&vfs_object_guards, (file_object_owner_t){pid, generation});
+    vfs_operation_end();
+    /* A contended cleanup retains its deny-only entries. The bounded poll
+     * sweep retries exact dead generations, never regranting their tokens. */
+#else
+    (void)pid; (void)generation;
+#endif
+}
+
+int vfs_file_object_guard_poll(uint64_t now_ms) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    static uint32_t cursor;
+    if (!vfs_guard_initialized) return 0;
+    if (!vfs_guard_try_begin()) return -REIST_EBUSY;
+    int result = file_object_guard_poll(&vfs_object_guards, now_ms);
+    /* Check the mutation owner EVERY poll, then one of the sixteen pin slots.
+     * Thus an old service reservation is fenced before service restart. */
+    for (unsigned step = 0; !result && step < 2; ++step) {
+        uint32_t slot = step == 0 ? FILE_OBJECT_GUARD_CAPACITY : cursor;
+        file_object_owner_t service = {0}, client = {0};
+        result = file_object_guard_owner_at(&vfs_object_guards, slot, &service, &client);
+        if (!result && service.pid && !vfs_guard_platform_live(service.pid, service.generation))
+            result = file_object_guard_cleanup(&vfs_object_guards, service);
+        if (!result && client.pid && !vfs_guard_platform_live(client.pid, client.generation))
+            result = file_object_guard_cleanup(&vfs_object_guards, client);
+    }
+    cursor = (cursor + 1U) % FILE_OBJECT_GUARD_CAPACITY;
+    vfs_operation_end();
+    return result;
+#else
+    (void)now_ms; return 0;
+#endif
+}
+
+int vfs_file_object_guard_fenced(uint32_t* mask) {
+    if (!mask) return -REIST_EINVAL;
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!vfs_guard_initialized) { *mask = 0; return 0; }
+    if (!vfs_guard_try_begin()) return -REIST_EBUSY;
+    int result = file_object_guard_fenced(&vfs_object_guards, mask);
+    vfs_operation_end();
+    return result;
+#else
+    *mask = 0; return 0;
+#endif
+}
+
+int vfs_file_object_guard_cancel_undelivered(
+    const reist_file_object_guard_request_t* request,
+    int service_pid, uint32_t service_generation) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!request) return -REIST_EINVAL;
+    if (!vfs_operation_begin()) return -REIST_EBUSY;
+    int result = file_object_guard_cancel_undelivered(&vfs_object_guards,
+        request->operation, request->token,
+        (file_object_owner_t){service_pid, service_generation},
+        (file_object_owner_t){request->client_pid, request->client_generation});
+    vfs_operation_end();
+    return result;
+#else
+    (void)request; (void)service_pid; (void)service_generation;
+    return -REIST_ENOTSUP;
+#endif
+}
+
+int vfs_file_object_guard_io_begin(uint32_t resource, uint32_t sector,
+                                  bool flush, int service_pid,
+                                  uint32_t service_generation) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!vfs_operation_begin()) return -REIST_EBUSY;
+    drive_t* drive = vfs_guard_platform_drive(resource);
+    int result = !drive || !vfs_guard_physical(drive) ? -REIST_ENODEV : 0;
+    if (!result && !vfs_guard_platform_live(service_pid, service_generation)) result = -REIST_EACCES;
+    vfs_filesystem_t* selected = NULL;
+    uint64_t first = drive && drive->type == DRIVE_TYPE_PARTITION ? drive->lba_offset : 0;
+    uint64_t length = vfs_guard_drive_size(drive);
+    if (!result && !flush && sector >= length) result = -REIST_EINVAL;
+    for (vfs_mount_t* m = mount_list; !result && m; m = m->next) {
+        if (!vfs_guard_same_physical(drive, m->fs->drive)) continue;
+        uint32_t other_first, other_count;
+        result = vfs_guard_extent(m->fs, &other_first, &other_count);
+        if (result) break;
+        if (first >= (uint64_t)other_first + other_count ||
+            other_first >= first + length) continue;
+        if (selected || (m->fs->drive != drive &&
+            (first != other_first || length != other_count))) { result = -REIST_EINVAL; break; }
+        if (!flush && (first + sector < other_first ||
+            first + sector >= (uint64_t)other_first + other_count)) { result = -REIST_EINVAL; break; }
+        selected = m->fs;
+    }
+    uint32_t canonical = resource;
+    if (!result && selected) result = vfs_guard_resource(selected, &canonical);
+    if (!result) result = file_object_guard_mutation_authorized(&vfs_object_guards,
+        (file_object_owner_t){service_pid, service_generation}, canonical, vfs_guard_platform_now());
+    if (result == -REIST_EACCES && vfs_guard_platform_live(service_pid, service_generation)) {
+        /* No active reservation: only the already exclusive maintenance path
+         * (or an unmounted medium) may issue raw effects. Plain BLOCK_WRITE
+         * cannot bypass the two open-object registries. */
+        if (!selected || (selected->maintenance_blocked && !selected->open_nodes)) {
+            uint32_t pins = 0;
+            int counted = selected ? vfs_guard_pin_count(selected, &pins) : VFS_OK;
+            if (counted == VFS_OK && !pins)
+                result = file_object_guard_legacy_enter(&vfs_object_guards, vfs_guard_platform_now());
+            else result = -REIST_EBUSY;
+        }
+    }
+    if (result) vfs_operation_end();
+    return result;
+#else
+    (void)resource; (void)sector; (void)flush; (void)service_pid; (void)service_generation;
+    return -REIST_ENOTSUP;
+#endif
+}
+
+void vfs_file_object_guard_io_end(void) { vfs_operation_end(); }
+
+int vfs_file_object_guard_request(reist_file_object_guard_request_t* request,
+                                  int service_pid, uint32_t service_generation) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!file_object_guard_request_valid(request)) return -REIST_EINVAL;
+    if (!vfs_operation_begin()) return -REIST_EBUSY;
+    int result = 0;
+    uint64_t now = vfs_guard_platform_now();
+    file_object_owner_t service = {service_pid, service_generation};
+    file_object_owner_t client = {request->client_pid, request->client_generation};
+    if (!vfs_guard_platform_live(service_pid, service_generation)) result = -REIST_EACCES;
+    uint32_t operation = request->operation;
+    if (!result && (operation == REIST_FILE_OBJECT_PIN || operation == REIST_FILE_OBJECT_VERIFY) &&
+        !vfs_guard_platform_live(client.pid, client.generation)) result = -REIST_ESTALE;
+    reist_file_object_key_t keys[2] = {request->keys[0], request->keys[1]};
+    uint32_t count = keys[1].kind ? 2U : 1U;
+    if (!result && (operation == REIST_FILE_OBJECT_PIN || operation == REIST_FILE_OBJECT_MUTATION_BEGIN)) {
+        for (uint32_t i = 0; !result && i < count; ++i) {
+            result = vfs_guard_normalize(&keys[i]);
+            if (!result && !vfs_guard_platform_available(keys[i].resource)) result = -REIST_EIO;
+        }
+        if (!result && count == 2 && keys[0].resource != keys[1].resource) result = -REIST_EINVAL;
+    }
+    if (!result && operation == REIST_FILE_OBJECT_MUTATION_BEGIN) {
+        bool exclusive = (request->flags & REIST_FILE_OBJECT_EXCLUSIVE) != 0;
+        if (exclusive) {
+            for (vfs_mount_t* m = mount_list; !result && m; m = m->next) {
+                uint32_t resource;
+                result = vfs_guard_resource(m->fs, &resource);
+                if (!result && resource == keys[0].resource && m->fs->open_nodes) result = -REIST_EBUSY;
+            }
+        }
+        for (uint32_t i = 0; !result && i < VFS_OPEN_NODE_CAPACITY; ++i) {
+            if (!open_node_records[i].node) continue;
+            reist_file_object_key_t legacy;
+            result = vfs_guard_node_key(open_node_records[i].node, &legacy);
+            for (uint32_t j = 0; !result && j < count; ++j)
+                if (!memcmp(&legacy, &keys[j], sizeof(legacy))) result = -REIST_EBUSY;
+        }
+    }
+    if (!result) switch (operation) {
+    case REIST_FILE_OBJECT_SNAPSHOT:
+        result = file_object_guard_snapshot(&vfs_object_guards, &request->epoch, now);
+        break;
+    case REIST_FILE_OBJECT_PIN:
+        result = file_object_guard_pin(&vfs_object_guards, &keys[0], service, client,
+                                        request->epoch, now, &request->token);
+        if (!result && !vfs_guard_platform_live(client.pid, client.generation)) {
+            int released = file_object_guard_cancel_undelivered(&vfs_object_guards,
+                operation, request->token, service, client);
+            result = released ? released : -REIST_ESTALE;
+            request->token = 0;
+        }
+        break;
+    case REIST_FILE_OBJECT_RELEASE:
+        result = file_object_guard_release(&vfs_object_guards, request->token, service, client);
+        break;
+    case REIST_FILE_OBJECT_VERIFY:
+        result = file_object_guard_lookup(&vfs_object_guards, request->token, service, client, now, &keys[0]);
+        if (!result && !vfs_guard_platform_available(keys[0].resource)) result = -REIST_EIO;
+        break;
+    case REIST_FILE_OBJECT_MUTATION_BEGIN:
+        result = file_object_guard_begin(&vfs_object_guards, keys, count,
+            (request->flags & REIST_FILE_OBJECT_EXCLUSIVE) != 0, service,
+            request->epoch, now, request->deadline_ms, &request->token);
+        break;
+    case REIST_FILE_OBJECT_MUTATION_END:
+        result = file_object_guard_end(&vfs_object_guards, request->token, service, request->flags, now);
+        break;
+    default: result = -REIST_EINVAL; break;
+    }
+    /* Keys in the caller's request remain in their original resource namespace.
+     * Only admitted output epoch/token fields change. */
+    vfs_operation_end();
+    return result;
+#else
+    (void)request; (void)service_pid; (void)service_generation;
+    return -REIST_ENOTSUP;
 #endif
 }
 
@@ -103,11 +566,23 @@ __attribute__((weak)) bool vfs_host_mutation_end(bool commit) {
 #endif
 
 static bool vfs_mutation_begin(void) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    vfs_guard_mutation_error = file_object_guard_legacy_enter(
+        &vfs_object_guards, vfs_guard_platform_now());
+    if (vfs_guard_mutation_error) return false;
+#endif
 #ifndef KERNEL_HOST_TEST
     return filesystem_mutation_begin(pit_monotonic_ms());
 #else
     return vfs_host_mutation_begin();
 #endif
+}
+
+static int vfs_mutation_denied(void) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (vfs_guard_mutation_error) return vfs_guard_errno(vfs_guard_mutation_error);
+#endif
+    return VFS_ERR_READ_ONLY;
 }
 
 static bool vfs_mutation_end(bool commit) {
@@ -147,6 +622,10 @@ static bool vfs_valid_absolute_path(const char* path) {
 // ===========================================================================
 
 static void vfs_init_locked(void) {
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (file_object_guard_init(&vfs_object_guards) != 0) return;
+    vfs_guard_initialized = true;
+#endif
     printf("VFS: Initializing Virtual File System...\n");
 
     if (mount_list != NULL) {
@@ -269,6 +748,7 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     fs->root = NULL;
     fs->open_nodes = 0;
     fs->maintenance_blocked = maintenance_blocked;
+    fs->object_media_revoked = false;
 
     // Allocate the mount record before activating the filesystem so every
     // allocation failure is still side-effect free.
@@ -279,6 +759,12 @@ static int vfs_mount_locked(drive_t* drive, const char* fs_type,
     }
     
     // Call filesystem-specific mount
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_mount_admission(drive);
+    if (admission == VFS_OK) admission = vfs_guard_errno(file_object_guard_legacy_enter(
+        &vfs_object_guards, vfs_guard_platform_now()));
+    if (admission != VFS_OK) { free(mount); free(fs); return admission; }
+#endif
     int result = ops->mount(fs, drive);
     if (result != VFS_OK) {
         free(mount);
@@ -312,6 +798,15 @@ static int vfs_unmount_locked(const char* mount_path) {
             if (to_remove->fs->open_nodes != 0) {
                 return VFS_ERR_BUSY;
             }
+#ifdef VFS_FILE_OBJECT_GUARD
+            uint32_t pins = 0;
+            int counted = vfs_guard_pin_count(to_remove->fs, &pins);
+            if (counted != VFS_OK || pins) return counted != VFS_OK ? counted : VFS_ERR_BUSY;
+            uint32_t resource;
+            int revoked = vfs_guard_resource(to_remove->fs, &resource);
+            if (!revoked) revoked = file_object_guard_revoke_media(&vfs_object_guards, resource);
+            if (revoked) return vfs_guard_errno(revoked);
+#endif
             
             // Unmount filesystem
             if (to_remove->fs->ops->unmount) {
@@ -410,6 +905,10 @@ static int vfs_open_locked(const char* path, vfs_node_t** node) {
         return VFS_ERR_NOT_FOUND;
     }
     if (fs->maintenance_blocked) return VFS_ERR_BUSY;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->open) {
@@ -480,7 +979,14 @@ static int vfs_path_open_locked(vfs_filesystem_t* fs, const char* path,
                                 bool* open) {
     if (!fs || !path || !open) return VFS_ERR_INVALID;
     *open = false;
-    if (!vfs_filesystem_has_registered_nodes(fs)) return VFS_OK;
+    bool need_probe = vfs_filesystem_has_registered_nodes(fs);
+#ifdef VFS_FILE_OBJECT_GUARD
+    uint32_t pins = 0;
+    int counted = vfs_guard_pin_count(fs, &pins);
+    if (counted != VFS_OK) return counted;
+    need_probe = need_probe || pins != 0;
+#endif
+    if (!need_probe) return VFS_OK;
     if (!fs->ops || !fs->ops->open || !fs->ops->close ||
         !fs->ops->same_object) return VFS_ERR_BUSY;
 
@@ -501,7 +1007,17 @@ static int vfs_path_open_locked(vfs_filesystem_t* fs, const char* path,
             break;
         }
     }
-    return fs->ops->close(probe) == VFS_OK ? VFS_OK : VFS_ERR_IO;
+#ifdef VFS_FILE_OBJECT_GUARD
+    if (!*open) {
+        reist_file_object_key_t key;
+        int checked = vfs_guard_node_key(probe, &key);
+        if (!checked) checked = file_object_guard_key_busy(&vfs_object_guards, &key,
+                                                           vfs_guard_platform_now());
+        if (checked == -REIST_EBUSY) *open = true;
+        else if (checked) result = vfs_guard_errno(checked);
+    }
+#endif
+    return fs->ops->close(probe) == VFS_OK ? result : VFS_ERR_IO;
 }
 
 static int vfs_read_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
@@ -510,6 +1026,10 @@ static int vfs_read_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
         return VFS_ERR_INVALID;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(node->fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!node->fs->ops->read) {
         return VFS_ERR_UNSUPPORTED;
     }
@@ -523,6 +1043,10 @@ static int vfs_write_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
         return VFS_ERR_INVALID;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(node->fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!node->fs->ops->write) {
         return VFS_ERR_READ_ONLY;
     }
@@ -532,6 +1056,10 @@ static int vfs_write_locked(vfs_node_t* node, uint32_t offset, uint32_t size,
 
 static int vfs_truncate_locked(vfs_node_t* node, uint32_t size) {
     if (!node || !node->fs || !node->fs->ops) return VFS_ERR_INVALID;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(node->fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (node->type != VFS_FILE) return VFS_ERR_IS_DIR;
     if (!node->fs->ops->truncate) return VFS_ERR_UNSUPPORTED;
     return node->fs->ops->truncate(node, size);
@@ -540,6 +1068,10 @@ static int vfs_truncate_locked(vfs_node_t* node, uint32_t size) {
 static int vfs_fstat_locked(vfs_node_t* node, vfs_dir_entry_t* stat) {
     if (!node || !node->fs || !node->fs->ops || !stat)
         return VFS_ERR_INVALID;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(node->fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!node->fs->ops->fstat) return VFS_ERR_UNSUPPORTED;
     return node->fs->ops->fstat(node, stat);
 }
@@ -559,6 +1091,10 @@ static int vfs_readdir_locked(const char* path, uint32_t index,
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     // Open directory node
     vfs_node_t* dir_node;
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
@@ -597,6 +1133,10 @@ static int vfs_readdir_locked(const char* path, uint32_t index,
 
 static int vfs_sync_locked(vfs_node_t* node) {
     if (!node || !node->fs || !node->fs->ops) return VFS_ERR_INVALID;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(node->fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!node->fs->ops->sync) return VFS_ERR_UNSUPPORTED;
     return node->fs->ops->sync(node);
 }
@@ -607,6 +1147,10 @@ static int vfs_readdir_batch_locked(const char* path, uint32_t index,
     if (!path || !entries || capacity == 0) return VFS_ERR_INVALID;
     vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs || !fs->ops->open) return VFS_ERR_NOT_FOUND;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
 
     vfs_node_t* node = NULL;
     int result = fs->ops->open(
@@ -645,6 +1189,10 @@ static int vfs_mkdir_locked(const char* path) {
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->mkdir) {
         return VFS_ERR_UNSUPPORTED;
@@ -663,6 +1211,10 @@ static int vfs_rmdir_locked(const char* path) {
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->rmdir) {
         return VFS_ERR_UNSUPPORTED;
@@ -680,6 +1232,10 @@ static int vfs_space_locked(const char* path, vfs_space_info_t* info) {
     if (!path || !info) return VFS_ERR_INVALID;
     vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) return VFS_ERR_NOT_FOUND;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!fs->ops->space) return VFS_ERR_UNSUPPORTED;
     return fs->ops->space(fs, info);
 }
@@ -698,6 +1254,10 @@ static int vfs_create_locked(const char* path) {
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->create) {
         return VFS_ERR_UNSUPPORTED;
@@ -716,6 +1276,10 @@ static int vfs_delete_locked(const char* path) {
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->delete) {
         return VFS_ERR_UNSUPPORTED;
@@ -739,6 +1303,10 @@ static int vfs_stat_locked(const char* path, vfs_dir_entry_t* stat) {
         return VFS_ERR_NOT_FOUND;
     }
     
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->stat) {
         return VFS_ERR_UNSUPPORTED;
@@ -754,6 +1322,10 @@ static int vfs_rename_locked(const char* old_path, const char* new_path) {
     vfs_filesystem_t* new_fs = vfs_get_filesystem_locked(new_path);
     if (!old_fs || !new_fs) return VFS_ERR_NOT_FOUND;
     if (old_fs != new_fs) return VFS_ERR_UNSUPPORTED;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(old_fs);
+    if (admission != VFS_OK) return admission;
+#endif
     if (!old_fs->ops->rename) return VFS_ERR_UNSUPPORTED;
 
     const char* old_relative = vfs_get_relative_path_locked(old_path, old_fs);
@@ -772,6 +1344,10 @@ static int vfs_touch_locked(const char* path) {
     if (!path) return VFS_ERR_INVALID;
     vfs_filesystem_t* fs = vfs_get_filesystem_locked(path);
     if (!fs) return VFS_ERR_NOT_FOUND;
+#ifdef VFS_FILE_OBJECT_GUARD
+    int admission = vfs_guard_open_check(fs);
+    if (admission != VFS_OK) return admission;
+#endif
     const char* relative_path = vfs_get_relative_path_locked(path, fs);
     if (!fs->ops->touch) return VFS_ERR_UNSUPPORTED;
     return fs->ops->touch(fs, relative_path);
@@ -812,7 +1388,7 @@ int vfs_mount_maintenance(drive_t* drive, const char* fs_type,
 int vfs_unmount(const char* mount_path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_unmount_locked(mount_path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_unmount_locked(mount_path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -824,6 +1400,11 @@ static int vfs_maintenance_acquire_locked(drive_t* drive) {
         if (mount->fs->drive != drive) continue;
         if (mount->fs->maintenance_blocked || mount->fs->open_nodes != 0U)
             return VFS_ERR_BUSY;
+#ifdef VFS_FILE_OBJECT_GUARD
+        uint32_t pins = 0;
+        int counted = vfs_guard_pin_count(mount->fs, &pins);
+        if (counted != VFS_OK || pins) return counted != VFS_OK ? counted : VFS_ERR_BUSY;
+#endif
         mount->fs->maintenance_blocked = true;
         return VFS_OK;
     }
@@ -847,6 +1428,12 @@ static int vfs_maintenance_open_count_locked(drive_t* drive,
         if (mount->fs->drive != drive) continue;
         if (!mount->fs->maintenance_blocked) return VFS_ERR_INVALID;
         *open_nodes = mount->fs->open_nodes;
+#ifdef VFS_FILE_OBJECT_GUARD
+        uint32_t pins = 0;
+        int counted = vfs_guard_pin_count(mount->fs, &pins);
+        if (counted != VFS_OK || UINT32_MAX - *open_nodes < pins) return VFS_ERR_BUSY;
+        *open_nodes += pins;
+#endif
         return VFS_OK;
     }
     return VFS_ERR_NOT_FOUND;
@@ -940,7 +1527,7 @@ int vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_write_locked(node, offset, size, buffer)
-                       : VFS_ERR_READ_ONLY;
+                       : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -966,7 +1553,7 @@ int vfs_truncate(vfs_node_t* node, uint32_t size) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_truncate_locked(node, size)
-                       : VFS_ERR_READ_ONLY;
+                       : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1007,7 +1594,7 @@ int vfs_readdir_batch(const char* path, uint32_t index,
 int vfs_mkdir(const char* path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_mkdir_locked(path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_mkdir_locked(path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1016,7 +1603,7 @@ int vfs_mkdir(const char* path) {
 int vfs_rmdir(const char* path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_rmdir_locked(path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_rmdir_locked(path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1025,7 +1612,7 @@ int vfs_rmdir(const char* path) {
 int vfs_create(const char* path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_create_locked(path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_create_locked(path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1034,7 +1621,7 @@ int vfs_create(const char* path) {
 int vfs_delete(const char* path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_delete_locked(path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_delete_locked(path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1044,7 +1631,7 @@ int vfs_rename(const char* old_path, const char* new_path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
     int result = armed ? vfs_rename_locked(old_path, new_path)
-                       : VFS_ERR_READ_ONLY;
+                       : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;
@@ -1053,7 +1640,7 @@ int vfs_rename(const char* old_path, const char* new_path) {
 int vfs_touch(const char* path) {
     if (!vfs_operation_begin()) return VFS_ERR_BUSY;
     bool armed = vfs_mutation_begin();
-    int result = armed ? vfs_touch_locked(path) : VFS_ERR_READ_ONLY;
+    int result = armed ? vfs_touch_locked(path) : vfs_mutation_denied();
     result = vfs_mutation_finish(armed, result);
     vfs_operation_end();
     return result;

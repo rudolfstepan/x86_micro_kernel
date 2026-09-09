@@ -147,6 +147,7 @@
 #define SYS_CPU_TOPOLOGY 126
 #define SYS_TERMINAL_INPUT 127
 #define SYS_PROCESS_RESTRICT 128
+#define SYS_FILE_OBJECT_GUARD 129
 /* END GENERATED REIST SYSCALLS */
 
 // // Macros for try-catch handling

@@ -37,8 +37,8 @@
 #define SUPERVISED_RESTART_FRAME_RESERVE 32U
 #define PROCESS_DOMAIN_PROFILE_VERSION 2U
 #define PROCESS_DOMAIN_SYSCALL_WORDS 5U
-/* Exclusive upper bound; syscall 128 is append-only PROCESS_RESTRICT. */
-#define PROCESS_DOMAIN_SYSCALL_LIMIT 129U
+/* Exclusive upper bound; syscall 129 is append-only FILE_OBJECT_GUARD. */
+#define PROCESS_DOMAIN_SYSCALL_LIMIT 130U
 
 typedef enum {
     PROCESS_DOMAIN_COMPATIBILITY = 1,
@@ -172,6 +172,9 @@ int process_restrict_script(Process *process);
 int process_terminate_authorized(Process *requester, int pid);
 int process_get_identity(int pid, uint32_t *generation_out);
 bool process_identity_alive(int pid, uint32_t generation);
+/* New grants exclude exiting owners; the generic liveness query above retains
+ * its existing supervisor/reap semantics. */
+bool process_file_object_owner_live(int pid, uint32_t generation);
 int process_ipc_delegate(Process *source, ipc_handle_t handle,
                          int target_pid, uint32_t rights);
 int process_ipc_delegate_identity(int source_pid, uint32_t source_generation,

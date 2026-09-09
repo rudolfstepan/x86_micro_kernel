@@ -153,7 +153,8 @@ enum {
     X86OS_SYS_KERNEL_LOG_READ = 125,
     X86OS_SYS_CPU_TOPOLOGY = 126,
     X86OS_SYS_TERMINAL_INPUT = 127,
-    X86OS_SYS_PROCESS_RESTRICT = 128
+    X86OS_SYS_PROCESS_RESTRICT = 128,
+    X86OS_SYS_FILE_OBJECT_GUARD = 129
 };
 /* END GENERATED REIST SYSCALLS */
 
@@ -2077,6 +2078,10 @@ static inline int x86os_process_restrict_script(void) {
         REIST_PROCESS_RESTRICT_SCRIPT, 0U
     };
     return (int)x86os_syscall(X86OS_SYS_PROCESS_RESTRICT, (uintptr_t)&request, 0, 0);
+}
+/* Storage service only; no file-access rights are granted by this syscall. */
+static inline int x86os_file_object_guard(reist_file_object_guard_request_t* request) {
+    return (int)x86os_syscall(X86OS_SYS_FILE_OBJECT_GUARD, (uintptr_t)request, 0, 0);
 }
 int x86os_process_identity(x86os_process_identity_t* identity);
 /* Foreground terminal adapter; -EAGAIN from CHECK means no input authority. */

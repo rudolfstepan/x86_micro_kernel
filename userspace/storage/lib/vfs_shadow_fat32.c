@@ -652,7 +652,8 @@ static int shadow_resolve(const reist_vfs_shadow_io_t *io,
                           const char *absolute_path, uint32_t path_length,
                           shadow_volume_t *volume, shadow_dir_entry_t *entry,
                           char visible[256], uint32_t *entry_sector,
-                          uint32_t *entry_offset) {
+                          uint32_t *entry_offset, uint32_t *parent_cluster) {
+    if (parent_cluster != 0) *parent_cluster = 0;
     if (io == 0 || io->drive_info == 0 || io->read_sector == 0 ||
         absolute_path == 0 || volume == 0 || entry == 0 || visible == 0 ||
         path_length == 0U ||
@@ -700,7 +701,10 @@ static int shadow_resolve(const reist_vfs_shadow_io_t *io,
         if (shadow_entry_cluster(volume, entry, &found_cluster) != 0)
             return -5;
         while (cursor < path_length && absolute_path[cursor] == '/') ++cursor;
-        if (cursor >= path_length) return 0;
+        if (cursor >= path_length) {
+            if (parent_cluster != 0) *parent_cluster = directory;
+            return 0;
+        }
         if ((entry->bytes[11U] & FAT32_ATTR_DIRECTORY) == 0U) return -2;
         directory = found_cluster;
         if (!shadow_cluster_valid(volume, directory)) return -5;
@@ -856,7 +860,7 @@ int reist_vfs_shadow_fat_read(const reist_vfs_shadow_io_t *io,
     shadow_dir_entry_t entry;
     char visible[256];
     int status = shadow_resolve(io, absolute_path, path_length, &volume,
-                                &entry, visible, 0, 0);
+                                &entry, visible, 0, 0, 0);
     if (status != 0) return status;
     status = shadow_read_file(&volume, &entry, offset, data, capacity,
                               transferred);
@@ -1019,7 +1023,7 @@ int reist_vfs_shadow_fat_readdir_continue(
     shadow_dir_entry_t directory_entry;
     char visible[256];
     int status = shadow_resolve(io, absolute_path, path_length, &volume,
-                                &directory_entry, visible, 0, 0);
+                                &directory_entry, visible, 0, 0, 0);
     if (status != 0) {
         shadow_readdir_cursor_reset(cursor);
         return status;
@@ -1241,6 +1245,15 @@ int reist_vfs_shadow_fat_object_open(
         const reist_vfs_shadow_io_t *io, const char *absolute_path,
         uint32_t path_length, reist_vfs_shadow_object_t *object,
         x86os_file_info_t *info) {
+    return reist_vfs_shadow_fat_object_open_key(io, absolute_path, path_length,
+                                               object, info, 0);
+}
+
+int reist_vfs_shadow_fat_object_open_key(
+        const reist_vfs_shadow_io_t *io, const char *absolute_path,
+        uint32_t path_length, reist_vfs_shadow_object_t *object,
+        x86os_file_info_t *info, reist_file_object_key_t *key) {
+    if (key != 0) shadow_zero(key, sizeof(*key));
     if (object == 0 || info == 0) return -22;
     shadow_zero(object, sizeof(*object));
     shadow_zero(info, sizeof(*info));
@@ -1249,8 +1262,10 @@ int reist_vfs_shadow_fat_object_open(
     char visible[256];
     uint32_t entry_sector = 0U;
     uint32_t entry_offset = 0U;
+    uint32_t parent_cluster = 0U;
     int status = shadow_resolve(io, absolute_path, path_length, &volume,
-                                &entry, visible, &entry_sector, &entry_offset);
+                                &entry, visible, &entry_sector, &entry_offset,
+                                &parent_cluster);
     if (status != 0) return status;
     if ((entry.bytes[11U] & FAT32_ATTR_DIRECTORY) != 0U) return -21;
     uint32_t cluster = 0U;
@@ -1270,6 +1285,18 @@ int reist_vfs_shadow_fat_object_open(
         .locator_c = cluster,
         .object_generation = shadow_entry_generation(entry.bytes),
     };
+    if (key != 0) {
+        key->resource = volume.resource;
+        if (volume.fat_type == FAT_TYPE_12) {
+            key->kind = REIST_FILE_OBJECT_FAT12;
+            key->object_a = entry_sector;
+            key->object_b = entry_offset;
+        } else {
+            key->kind = REIST_FILE_OBJECT_FAT32;
+            key->object_a = parent_cluster;
+            shadow_copy(key->alias, entry.bytes, 11U);
+        }
+    }
     shadow_entry_info(&entry, visible, info);
     return 0;
 }

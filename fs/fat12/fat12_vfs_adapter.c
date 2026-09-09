@@ -1404,7 +1404,33 @@ static int fat12_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
     return VFS_OK;
 }
 
+static int fat12_vfs_object_key(const vfs_node_t* node,
+                               reist_file_object_key_t* key) {
+    if (!node || !node->fs || !key || node == node->fs->root ||
+        !node->fs_specific) return VFS_ERR_INVALID;
+    const fat12_file* handle = (const fat12_file*)node->fs_specific;
+    if (handle->directory_slot >= FAT12_SECTOR_SIZE / 32U)
+        return VFS_ERR_IO;
+    memset(key, 0, sizeof(*key));
+    key->kind = REIST_FILE_OBJECT_FAT12;
+    key->object_a = handle->directory_sector;
+    key->object_b = handle->directory_slot * 32U;
+    return VFS_OK;
+}
+
+static int fat12_vfs_volume_extent(const vfs_filesystem_t* fs,
+                                    uint32_t* first, uint32_t* count) {
+    if (!fs || !fs->fs_data || !first || !count) return VFS_ERR_INVALID;
+    const fat12_t* volume = (const fat12_t*)fs->fs_data;
+    *first = 0;
+    *count = volume->boot_sector.total_sectors ? volume->boot_sector.total_sectors :
+        volume->boot_sector.total_sectors_large;
+    return *count ? VFS_OK : VFS_ERR_IO;
+}
+
 vfs_filesystem_ops_t fat12_vfs_ops = {
+    .object_key = fat12_vfs_object_key,
+    .volume_extent = fat12_vfs_volume_extent,
     .mount = fat12_vfs_mount,
     .unmount = fat12_vfs_unmount,
     .open = fat12_vfs_open,

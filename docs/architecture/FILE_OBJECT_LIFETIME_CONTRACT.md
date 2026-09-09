@@ -3,7 +3,13 @@
 Vertragsstand: 8. September 2026, Ausgang024e4ce7. Dieses Paket schliesst die
 Autoritaetsgrenze zwischen vorhandenen Ring-3-Objekten und Legacy-VFS-Nodes.
 Es fuehrt weder JavaScript-Schreibrechte noch ein neues persistentes Format ein.
-Implementierung und Laufzeitabnahme stehen noch aus.
+Abnahme am 9. September 2026: gemeinsamer VFS-/Service-Schutz, Syscall129,
+EXT2-Transaktions-/Recoveryadapter und Supervisor-Fencing sind angeschlossen.
+Alle20 Gruppen bestanden: urspruengliche15 plus5 ausdruecklich freigegebene
+Lifecycle-Pruefungen. Native O0/O2, beide Referenzimages, drei echte
+Dateilebensdauer-Gastfaelle und bestehende JS-/Browsergaeste sind nachgewiesen.
+Die kalte Terminierungsreparatur und ihre Grenzen sind unten dokumentiert;
+exakte Belege, Fehlversuche und135 archivierte Referenzdateien in CURRENT_WORK.
 
 ## Nachinventur: weshalb ein zusaetzliches Kernelmechanismus-Paket erforderlich ist
 
@@ -74,6 +80,9 @@ den Schluessel an die bekannte physische Volume-Ausdehnung und Medienidentitaet;
 Partition-/Parent-Aliase duerfen den Vergleich nicht umgehen. Nicht eindeutig
 normalisierbare oder ueberlappende Mountvarianten liefern vor Wirkung einen
 Fehler. Ein Medienfingerprint ist kein vom Skript frei waehlbarer Bezeichner.
+Die vorhandenen Backend-Offsets sind relativ zu fs->drive. Erst der gemeinsame
+Mediator addiert einen Partitionsoffset exakt einmal, prueft Ueberlauf und
+logisches/physisches Ende und vergleicht die normalisierten Medienbereiche.
 
 Vorhandene256 Legacy-Node-Slots bleiben erhalten. Fuer die16 Serviceobjekte
 genuegt ein eigener fester, redundant geschuetzter Pin-Pool. Ein Pin bindet
@@ -133,6 +142,24 @@ darf nicht nur wegen eines noch belegten Ring-3-Slots weiterbenutzt werden.
 Vorhandene Maintenance-/Unmount-Pruefungen muessen beide Open-Tabellen beachten;
 Medienwechsel oder administrative Neuveroeffentlichung widerrufen alte Bindungen.
 
+Der Mediator lehnt ueberlappende Zweitmounts bereits vor dem Backend-Mount ab.
+Nach einem Medienwiderruf bleiben alte Legacy-Mounts einschliesslich geteilter
+Root-Nodes gesperrt: Close/Unmount, danach explizites Remount statt Erneuerung
+alter Handles. Normale Namespace-Epochen widerrufen solche Mounts nicht.
+Rohe Service-Write-/Flush-Syscalls werden unter demselben VFS-Mutex geordnet:
+normale gemountete Volumes brauchen eine laufende eigene Mutation; bisherige
+exklusive Wartung oder ungemountete Medien behalten ihren bestehenden Pfad.
+Ein normaler BLOCK_WRITE-Auftrag ohne Reservation darf den Schutz nicht umgehen
+und liefert EACCES vor Medienwirkung. Das ist keine neue Benutzerautoritaet.
+
+Die sechsteilige EXT2-IO-Struktur und alte Wrapper bleiben unveraendert.
+Explizite `_guarded`-Einstiege injizieren einen Hostcallback fuer den festen
+Request, nehmen vor Lookup die Epoche auf und beenden jede erworbene Reservation.
+Nur erfolgreicher Journalabschluss setzt DURABLE_COMMIT; schon der Versuch
+einer Medienwirkung setzt UNKNOWN, nicht erst eine erfolgreiche Rueckgabe.
+Erst eine neue private Testkompilierung mit REIST_OBJECT_GUARD_FAULT_TEST
+enthaelt die Gast-Fehlerausloesung; normale Images besitzen diese Branches nicht.
+
 MUTATION_END unterscheidet explizit nachgewiesen keine Wirkung, bestaetigten
 dauerhaften Abschluss und unklaren Ausgang. Der Backendaufrufer muss diese
 Information liefern; errno oder Close alleine sind keine Commit-Evidenz.
@@ -163,6 +190,27 @@ bleiben unveraendert; Quarantaene darf nicht als erfolgreicher Rollback gelten.
 
 ## Eingefrorene Abnahme
 
+### Freigegebene Terminierungsreparatur
+
+Der Nutzer hat die nach dem reproduzierten Gastfehler angefragte Erweiterung
+um Scheduler-Terminierung und ihre Regressionstests mit „mach weiter“ freigegeben.
+Nur der kalte Lebenszykluspfad wird erweitert: unter Prozess -> Task-Lock wird
+eine unbesessene, generationsgleiche Taskidentitaet atomar fuer Terminierung
+reserviert, ihr Wait-Node entfernt und erst danach Process.terminating gesetzt.
+READY, WAITING, SLEEPING und PREPARED sind zulassbar; CPU-Besitz/HANDOFF,
+stale Generationen und bereits beendete oder reservierte Tasks werden vor
+Seiteneffekten abgewiesen. Kein Remote-Kill eines noch CPU-besessenen Tasks.
+Ein separater interner Cleanupzustand verhindert doppelte Ressourcenfreigabe;
+FINISHED und Reap-Zulassung werden erst nach ihrem Abschluss publiziert.
+Die bestehende process_begin_exit-Einmalzulassung bleibt unveraendert.
+
+Der native Nachweis verwendet echte Admission-, Terminate-, Dispatch-, Wait-
+und Reap-Funktionen mit erzwungenem Umschaltpunkt vor dem Cleanup. Er prueft
+Wake/Timeout, Wiederholung, veraltete Identitaet und CPU-Besitz O0/O2.
+Fuenf bestehende SMP-/Wait-/IPC-/Scheduler-/Terminalgruppen ergaenzen die
+urspruenglichen15 Gates; diese und die Gastfristen werden nicht abgeschwaecht.
+Taskauswahl, Zeitabrechnung, CPU-local und Kontextwechsel bleiben unveraendert.
+
 Scope und genaue Gatebefehle stehen in automation/reist-s03b.toml. Zuerst echte
 Regressionen, dann vollstaendiger vertikaler Schnitt; keine spaetere
 Schreibobjekt-/JS-Implementierung in demselben Paket.
@@ -187,6 +235,13 @@ Schreibobjekt-/JS-Implementierung in demselben Paket.
   Imagebytes geprueft werden. Die fuenf bisherigen Schutzprogramme bleiben
   bytegleich; keine ungepruefte VMware-Performance-/WCET-Zusage. Scheduler,
   CPU-local und Framebuffer-Hotpaths sowie ATA-/AHCI-Journaling bleiben unberuehrt.
+
+Der vorhandene FAT12-Adapter hat keinen Rename-Einstieg. Der Gast weist dort
+Alias-Unlink, Dateierhalt, Close, Delegation und Ownerverlust nach; das weiterhin
+abgelehnte Rename wird explizit als UNSUPPORTED markiert, nicht als BUSY-Proof
+gezaehlt. Rename-Quell-/Zielnachweise nutzen die vorhandenen FAT32-/EXT2-Pfade.
+Die alten Syscalls0..128 behalten auch ihre groben Fehlermappings (-2 fuer
+Unlink, -5 fuer Rename); der native VFS-Test prueft zusaetzlich exakt EBUSY.
 
 Hostcompiler <=90s, einzelne Hostbinaries <=30s, einzelne Gaeste <=180s;
 ein Compiler-/VM-Verifikationsblock gleichzeitig. Private Medien und Logs

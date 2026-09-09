@@ -65,12 +65,20 @@ static bool permitted(uint32_t call) {
 }
 static void profiles(void) {
     Process old;
+    init(&process_list[0], PROCESS_DOMAIN_COMPATIBILITY);
+    CHECK(process_file_object_owner_live(9, 7));
+    CHECK(!process_file_object_owner_live(9, 8));
+    process_list[0].terminating = true;
+    CHECK(!process_file_object_owner_live(9, 7));
+    process_list[0].terminating = false; process_list[0].has_exited = true;
+    CHECK(!process_file_object_owner_live(9, 7));
     for(unsigned kind=1;kind<=9;++kind) {
         init(current,(process_domain_kind_t)kind); old=*current;
         CHECK(baseline_profile(&old.domain_profile,(process_domain_kind_t)kind));
         for(unsigned call=0;call<128;++call)
             CHECK(process_syscall_allowed(current,call)==process_syscall_allowed(&old,call));
         CHECK(process_syscall_allowed(current,128)==(kind==1));
+        CHECK(process_syscall_allowed(current,129)==(kind==PROCESS_DOMAIN_STORAGE));
         if(kind!=1) unchanged(*current,-13);
     }
     init(current,PROCESS_DOMAIN_COMPATIBILITY);

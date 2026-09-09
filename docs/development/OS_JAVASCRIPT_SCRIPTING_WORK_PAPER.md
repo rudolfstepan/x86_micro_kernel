@@ -1,6 +1,6 @@
 # Work Paper: gemeinsame JavaScript-Laufzeit, getrennte Host-Autorität
 
-Stand: 8. September 2026. Ausgangspunkt: `270754bd`.
+Stand: 9. September 2026. Ausgangspunkt: `270754bd`.
 Status: R3.34 ist mit allen11 Prüfgruppen abgenommen. JS2 / R3.35 ist ebenfalls
 umgesetzt und mit allen10 Prüfgruppen abgenommen: allgemeiner isolierter Runner
 mit Argumenten/Konsole, noch ohne Datei-/Prozess-/Admin-Bindings. Dieses Papier
@@ -298,5 +298,20 @@ Admission. Der naechste zusammenhaengende Schnitt ist R3.38 gemaess
 FAT12/FAT32/EXT2, beide Besitzer, Aliasidentitaet, atomare Open-Verifikation,
 Widerruf sowie Recovery mit unbekanntem Ausgang gehoeren gemeinsam in dieses
 Paket. Die anschliessende Daten-/Journalmigration und JS-Schreibbindung bleiben
-separate Autoritaets-/Persistenzschritte. R3.38 ist eingefroren, nicht umgesetzt
-oder als Laufzeitverhalten abgenommen; die15 Gates stehen in der Queue.
+separate Autoritaets-/Persistenzschritte. R3.38 ist am9. September mit allen20
+Gruppen abgenommen (15 urspruengliche plus5 freigegebene Lifecycle-Gruppen).
+Der Mediator verbindet VFS und Service mit Syscall129, Kernel-Pins,
+Medienwiderruf und Supervisor-Fencing. EXT2 verwendet explizite Guard-Adapter
+auch bei leseseitiger Recovery, ohne das Journalformat oder alte IO-Wrapper zu
+aendern. O0/O2 prueft realen VFS-, Service- und Backendcode, einschliesslich
+verlorener Antworten, Owner-/Closefehler und dauerhaft gesperrter Unsicherheit.
+OBJGDTST ist fuer beide Shell-Layouts ergaenzt. Beide Referenzimages sowie
+Dateilebensdauer, Prozessfault, Dienstfault/-hang/-restart, isolierter JS-Runner,
+eingeschraenkter Worker und Browser bestanden im Gast. Eine freigegebene kalte
+Scheduler-Korrektur schliesst Wiederanlauf waehrend fremder Terminierung;
+Taskauswahl/Abrechnung bleiben unveraendert. Keine neue JS-Schreibautoritaet.
+Als naechstes ist die persistente Ring-3-Backendmigration nach dem obigen
+Schreibvertrag konkret zu inventarisieren und einzufrieren, danach erst
+explizite JS-Schreibdelegation. Keine Umleitung auf Legacy-SYS_WRITE, kein JS4
+und kein Vorziehen der weiterhin zurueckgestellten VMware-Pointerabnahme.
+Belege und135 hashgepruefte Referenzdateien in CURRENT_WORK.

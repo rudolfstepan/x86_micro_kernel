@@ -404,7 +404,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
     profile->kind = (uint32_t)kind;
     if (kind == PROCESS_DOMAIN_COMPATIBILITY) {
         for (uint32_t index = 0; index < PROCESS_DOMAIN_SYSCALL_LIMIT; ++index) {
-            profile_allow(profile, index);
+            if (index != SYS_FILE_OBJECT_GUARD) profile_allow(profile, index);
         }
         return true;
     }
@@ -429,7 +429,7 @@ static bool initialize_domain_profile(process_domain_profile_t *profile,
             SYS_STORAGE_COMPLETE, SYS_STORAGE_BLOCK_FLUSH,
             SYS_STORAGE_MEDIA_COMMIT, SYS_STORAGE_FORMAT_PROBE,
             SYS_BOOT_STATUS, SYS_STAT, SYS_PROCESS_IDENTITY,
-            SYS_STORAGE_CLAIM_IDENTITY, SYS_STORAGE_BULK
+            SYS_STORAGE_CLAIM_IDENTITY, SYS_STORAGE_BULK, SYS_FILE_OBJECT_GUARD
         };
         for (size_t index = 0;
              index < sizeof(storage_syscalls) / sizeof(storage_syscalls[0]);
@@ -1435,6 +1435,10 @@ void process_close_all_files(Process *process) {
             (void)process_file_close(process, i);
         }
     }
+    /* Shared by normal exit, user faults, remote termination and failed
+     * spawn. All callers have released lifecycle spinlocks before teardown.
+     * A contended guard retains deny-only pins for the bounded poll sweep. */
+    vfs_file_object_guard_process_cleanup(process->pid, process->generation);
 }
 
 int process_revoke_files_for_resource(uint32_t resource,
@@ -1751,6 +1755,15 @@ int process_terminate(int pid) {
             }
             bool self = task_id == scheduler_current_task_id();
             if (!self) {
+                /* Reserve under Process -> Task before publishing terminating:
+                 * another CPU must not claim the target in between. A running
+                 * owner must first quiesce through its existing bounded fence. */
+                if (!scheduler_reserve_termination_locked(
+                        task_id, &process_list[i], process_list[i].generation)) {
+                    process_table_unlock_irqrestore(flags);
+                    scheduler_preempt_enable();
+                    return -1;
+                }
                 terminal_input_process_cleanup(pid, process_list[i].generation);
                 process_list[i].terminating = true;
             }
@@ -1804,6 +1817,22 @@ int process_get_identity(int pid, uint32_t *generation_out) {
     }
     process_table_unlock_irqrestore(flags);
     return -1;
+}
+
+bool process_file_object_owner_live(int pid, uint32_t generation) {
+    if (pid <= 0 || generation == 0U) return false;
+    uint32_t flags = process_table_lock_irqsave();
+    bool alive = false;
+    for (int index = 0; index < MAX_PROGRAMS; ++index) {
+        const Process* process = &process_list[index];
+        if (process->is_running && !process->has_exited && !process->terminating &&
+            process->pid == pid && process->generation == generation) {
+            alive = true;
+            break;
+        }
+    }
+    process_table_unlock_irqrestore(flags);
+    return alive;
 }
 
 bool process_identity_alive(int pid, uint32_t generation) {

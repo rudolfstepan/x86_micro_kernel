@@ -1509,6 +1509,27 @@ static int fat32_vfs_write(vfs_node_t* node, uint32_t offset, uint32_t size,
     return result;
 }
 
+static int fat32_vfs_object_key(const vfs_node_t* node,
+                               reist_file_object_key_t* key) {
+    if (!node || !node->fs || !key || node == node->fs->root ||
+        !node->fs_specific) return VFS_ERR_INVALID;
+    const fat32_vfs_handle_t* handle = (const fat32_vfs_handle_t*)node->fs_specific;
+    memset(key, 0, sizeof(*key));
+    key->kind = REIST_FILE_OBJECT_FAT32;
+    key->object_a = handle->parent_cluster;
+    memcpy(key->alias, handle->entry.name, 11U);
+    return VFS_OK;
+}
+
+static int fat32_vfs_volume_extent(const vfs_filesystem_t* fs,
+                                    uint32_t* first, uint32_t* count) {
+    if (!fs || !fs->fs_data || !first || !count) return VFS_ERR_INVALID;
+    const fat32_vfs_context_t* context = (const fat32_vfs_context_t*)fs->fs_data;
+    *first = context->partition_lba;
+    *count = context->boot.total_sectors_32;
+    return *count ? VFS_OK : VFS_ERR_IO;
+}
+
 static uint32_t fat32_vfs_write_chunk_capacity(const vfs_node_t* node,
                                                uint32_t offset) {
     if (node == NULL || node->type != VFS_FILE || node->fs == NULL ||
@@ -1681,6 +1702,8 @@ static int fat32_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
 // ===========================================================================
 
 vfs_filesystem_ops_t fat32_vfs_ops = {
+    .object_key = fat32_vfs_object_key,
+    .volume_extent = fat32_vfs_volume_extent,
     .mount = fat32_vfs_mount,
     .unmount = fat32_vfs_unmount,
     .open = fat32_vfs_open,

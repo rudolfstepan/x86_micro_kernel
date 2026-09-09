@@ -11,7 +11,7 @@
 #include <stdint.h>
 
 #define REIST_SYSCALL_ABI_VERSION 1U
-#define REIST_SYSCALL_COUNT 129U
+#define REIST_SYSCALL_COUNT 130U
 
 #define REIST_SYSCALL_LIST(X) \
     X(TERMINAL_PUTCHAR, PUTCHAR, 0U) \
@@ -142,7 +142,8 @@
     X(KERNEL_LOG_READ, KERNEL_LOG_READ, 125U) \
     X(CPU_TOPOLOGY, CPU_TOPOLOGY, 126U) \
     X(TERMINAL_INPUT, TERMINAL_INPUT, 127U) \
-    X(PROCESS_RESTRICT, PROCESS_RESTRICT, 128U)
+    X(PROCESS_RESTRICT, PROCESS_RESTRICT, 128U) \
+    X(FILE_OBJECT_GUARD, FILE_OBJECT_GUARD, 129U)
 
 /* REIST single-terminal foreground adapter, not POSIX termios/job control. */
 #define REIST_TERMINAL_INPUT_VERSION 1U
@@ -164,6 +165,37 @@ typedef struct {
 typedef struct {
     uint32_t version, struct_size, profile, reserved;
 } reist_process_restrict_request_t;
+
+/* R3.38 deny-only file identity. Not a pathname, descriptor or write grant. */
+#define REIST_FILE_OBJECT_VERSION 1U
+#define REIST_FILE_OBJECT_FAT12 1U
+#define REIST_FILE_OBJECT_FAT32 2U
+#define REIST_FILE_OBJECT_EXT2 3U
+#define REIST_FILE_OBJECT_SNAPSHOT 1U
+#define REIST_FILE_OBJECT_PIN 2U
+#define REIST_FILE_OBJECT_RELEASE 3U
+#define REIST_FILE_OBJECT_MUTATION_BEGIN 4U
+#define REIST_FILE_OBJECT_MUTATION_END 5U
+#define REIST_FILE_OBJECT_VERIFY 6U
+#define REIST_FILE_OBJECT_EXCLUSIVE 1U
+#define REIST_FILE_OBJECT_NO_EFFECT 1U
+#define REIST_FILE_OBJECT_DURABLE_COMMIT 2U
+#define REIST_FILE_OBJECT_UNKNOWN 3U
+
+typedef struct {
+    uint32_t kind, resource, object_a, object_b;
+    uint8_t alias[12];
+    uint32_t reserved;
+} reist_file_object_key_t;
+
+typedef struct {
+    uint32_t version, struct_size, operation, flags;
+    reist_file_object_key_t keys[2];
+    uint64_t epoch, deadline_ms;
+    uint32_t token;
+    int32_t client_pid;
+    uint32_t client_generation, reserved;
+} reist_file_object_guard_request_t;
 
 #define REIST_DECLARE_SYSCALL(kernel_name, sdk_name, number) \
     REIST_SYS_##sdk_name = number,

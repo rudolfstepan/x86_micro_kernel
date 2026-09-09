@@ -5620,14 +5620,35 @@ static int vfs_shadow_deadline(uint32_t budget_ms, uint64_t *deadline) {
     return 0;
 }
 
-static reist_vfs_shadow_ext2_io_t vfs_shadow_ext2_io(void) {
-    const reist_vfs_shadow_ext2_io_t io = {
-        .context = 0,
-        .drive_info = vfs_shadow_drive_info,
-        .read_sector = vfs_shadow_read_sector,
-        .write_sector = vfs_shadow_write_sector,
-        .flush = vfs_shadow_flush,
-        .monotonic_ms = vfs_shadow_monotonic,
+static int vfs_shadow_ext2_guard(void *context, reist_file_object_guard_request_t *request) {
+    (void)context;
+#ifdef REIST_OBJECT_GUARD_FAULT_TEST
+    /* Only a separately built private guest fixture contains this branch.
+     * Lose a real reservation AFTER media effects, before delivering END. */
+    if (request->operation == REIST_FILE_OBJECT_MUTATION_END) {
+#if REIST_OBJECT_GUARD_FAULT_TEST == 2
+        (void)x86os_sleep_ms(6000U);
+#endif
+        /* Storage has no terminal authority. Identify a real fault through
+         * the existing kernel register diagnostic, without granting logging. */
+        __asm__ volatile("ud2" : : "a"(0x338fa017U));
+    }
+#endif
+    return x86os_file_object_guard(request);
+}
+
+static reist_vfs_shadow_ext2_guarded_io_t vfs_shadow_ext2_io(void) {
+    const reist_vfs_shadow_ext2_guarded_io_t io = {
+        .io = {
+            .context = 0,
+            .drive_info = vfs_shadow_drive_info,
+            .read_sector = vfs_shadow_read_sector,
+            .write_sector = vfs_shadow_write_sector,
+            .flush = vfs_shadow_flush,
+            .monotonic_ms = vfs_shadow_monotonic,
+        },
+        .guard_context = 0,
+        .guard = vfs_shadow_ext2_guard,
     };
     return io;
 }
@@ -5682,8 +5703,8 @@ static int vfs_shadow_authoritative_filesystem_stat(
         status = vfs_shadow_deadline(
             VFS_EXT2_READ_DEADLINE_MS, &deadline);
         if (status == 0) {
-            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-            status = reist_vfs_shadow_ext2_stat_bounded(
+            reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_stat_bounded_guarded(
                 &ext2_io, frame->path, frame->path_length, resolve_flags,
                 deadline, &parsed_info);
         }
@@ -5793,8 +5814,8 @@ static int vfs_shadow_read_at(x86os_vfs_shadow_read_frame_t *frame) {
         status = vfs_shadow_deadline(
             VFS_EXT2_READ_DEADLINE_MS, &deadline);
         if (status == 0) {
-            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-            status = reist_vfs_shadow_ext2_read_bounded(
+            reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_read_bounded_guarded(
                 &ext2_io, frame->path, frame->path_length, frame->offset,
                 frame->data, frame->requested, deadline, &transferred);
         }
@@ -5921,8 +5942,8 @@ static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame,
         status = vfs_shadow_deadline(
             VFS_EXT2_READ_DEADLINE_MS, &deadline);
         if (status == 0) {
-            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-            status = reist_vfs_shadow_ext2_readdir_bounded(
+            reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_readdir_bounded_guarded(
                 &ext2_io, frame->path, frame->path_length, frame->index,
                 &slot->ext2, deadline, &parsed);
         }
@@ -5944,8 +5965,8 @@ static int vfs_shadow_readdir_at(x86os_vfs_shadow_readdir_frame_t *frame,
             status = vfs_shadow_deadline(
                 VFS_EXT2_READ_DEADLINE_MS, &deadline);
             if (status == 0) {
-                reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-                status = reist_vfs_shadow_ext2_readdir_bounded(
+                reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+                status = reist_vfs_shadow_ext2_readdir_bounded_guarded(
                     &ext2_io, frame->path, frame->path_length, frame->index,
                     &slot->ext2, deadline, &parsed);
             }
@@ -5982,6 +6003,8 @@ typedef union {
 
 typedef struct {
     reist_vfs_shadow_object_t locator;
+    reist_file_object_key_t key;
+    uint32_t kernel_pin;
     int32_t owner_pid;
     uint32_t owner_generation;
     uint32_t generation;
@@ -5990,6 +6013,7 @@ typedef struct {
     uint8_t in_use;
     uint8_t retired;
     uint8_t pending;
+    uint8_t closing;
 } vfs_object_slot_t;
 
 static vfs_object_slot_t vfs_objects[VFS_OBJECT_CAPACITY];
@@ -6004,23 +6028,65 @@ static uint32_t vfs_object_token(uint32_t slot, uint32_t generation) {
     return (generation << 8U) | (slot + 1U);
 }
 
-static void vfs_object_release(vfs_object_slot_t *slot) {
-    if (slot == 0 || slot->in_use == 0U) return;
+static reist_file_object_guard_request_t vfs_object_guard_request(uint32_t operation) {
+    reist_file_object_guard_request_t request = {0};
+    request.version = REIST_FILE_OBJECT_VERSION;
+    request.struct_size = sizeof(request);
+    request.operation = operation;
+    return request;
+}
+
+static int vfs_object_guard_snapshot(uint64_t *epoch) {
+    reist_file_object_guard_request_t request = vfs_object_guard_request(REIST_FILE_OBJECT_SNAPSHOT);
+    int status = x86os_file_object_guard(&request);
+    if (status == 0) *epoch = request.epoch;
+    return status;
+}
+
+static int vfs_object_guard_pin(const reist_file_object_key_t *key, uint64_t epoch,
+        int32_t pid, uint32_t generation, uint32_t *pin) {
+    reist_file_object_guard_request_t request = vfs_object_guard_request(REIST_FILE_OBJECT_PIN);
+    request.keys[0] = *key; request.epoch = epoch;
+    request.client_pid = pid; request.client_generation = generation;
+    int status = x86os_file_object_guard(&request);
+    if (status == 0) *pin = request.token;
+    return status;
+}
+
+static int vfs_object_guard_slot(const vfs_object_slot_t *slot, uint32_t operation) {
+    reist_file_object_guard_request_t request = vfs_object_guard_request(operation);
+    request.token = slot->kernel_pin;
+    request.client_pid = slot->owner_pid;
+    request.client_generation = slot->owner_generation;
+    return x86os_file_object_guard(&request);
+}
+
+static int vfs_object_release(vfs_object_slot_t *slot) {
+    if (slot == 0 || slot->in_use == 0U) return 0;
+    /* A failed release is not permission to forget the pin. Quiesce the slot
+     * and retry once on its next bounded reap turn; process reap is the backstop. */
+    slot->closing = 1U;
+    int status = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_RELEASE);
+    if (status != 0 && status != -116) return status;
     vfs_object_zero(&slot->locator, sizeof(slot->locator));
+    vfs_object_zero(&slot->key, sizeof(slot->key));
+    slot->kernel_pin = 0U;
     slot->owner_pid = 0;
     slot->owner_generation = 0U;
     slot->rights = 0U;
     slot->pending_deadline_ms = 0U;
     slot->pending = 0U;
+    slot->closing = 0U;
     slot->in_use = 0U;
     if (slot->generation == VFS_OBJECT_GENERATION_MAX) {
         slot->retired = 1U;
     } else {
         ++slot->generation;
     }
+    return 0;
 }
 
-static int vfs_object_resolve(uint32_t token, uint32_t service_generation,
+static int vfs_object_resolve_local(uint32_t token, uint32_t service_generation,
         int32_t owner_pid, uint32_t owner_generation,
         uint32_t current_service_generation, vfs_object_slot_t **slot_out) {
     uint32_t encoded_slot = token & VFS_OBJECT_SLOT_MASK;
@@ -6037,10 +6103,29 @@ static int vfs_object_resolve(uint32_t token, uint32_t service_generation,
     return 0;
 }
 
+static int vfs_object_resolve(uint32_t token, uint32_t service_generation,
+        int32_t owner_pid, uint32_t owner_generation,
+        uint32_t current_service_generation, vfs_object_slot_t **slot_out) {
+    vfs_object_slot_t *slot = 0;
+    int status = vfs_object_resolve_local(token, service_generation, owner_pid,
+        owner_generation, current_service_generation, &slot);
+    if (status != 0) return status;
+    if (slot->closing != 0U) return -9;
+    status = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY);
+    if (status == -116) (void)vfs_object_release(slot);
+    if (status == 0) *slot_out = slot;
+    return status;
+}
+
 static void vfs_object_reap_one(void) {
     uint32_t slot_index = vfs_object_reap_cursor++ % VFS_OBJECT_CAPACITY;
     vfs_object_slot_t *slot = &vfs_objects[slot_index];
     if (slot->in_use == 0U) return;
+    if (slot->closing != 0U) { (void)vfs_object_release(slot); return; }
+    if (vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY) == -116) {
+        (void)vfs_object_release(slot);
+        return;
+    }
     if (slot->pending != 0U) {
         uint64_t now_ms = 0U;
         if (x86os_monotonic_ms(&now_ms) != 0 ||
@@ -6085,8 +6170,8 @@ static int vfs_ext2_object_stat(
     uint64_t deadline = 0U;
     int status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
     if (status != 0) return status;
-    reist_vfs_shadow_ext2_io_t io = vfs_shadow_ext2_io();
-    return reist_vfs_shadow_ext2_object_stat_bounded(
+    reist_vfs_shadow_ext2_guarded_io_t io = vfs_shadow_ext2_io();
+    return reist_vfs_shadow_ext2_object_stat_bounded_guarded(
         &io, object, deadline, info);
 }
 
@@ -6096,8 +6181,8 @@ static int vfs_ext2_object_read(
     uint64_t deadline = 0U;
     int status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
     if (status != 0) return status;
-    reist_vfs_shadow_ext2_io_t io = vfs_shadow_ext2_io();
-    return reist_vfs_shadow_ext2_object_read_bounded(
+    reist_vfs_shadow_ext2_guarded_io_t io = vfs_shadow_ext2_io();
+    return reist_vfs_shadow_ext2_object_read_bounded_guarded(
         &io, object, offset, data, capacity, deadline, transferred);
 }
 
@@ -6128,33 +6213,49 @@ static int vfs_object_open(x86os_vfs_shadow_object_frame_t *frame,
         .read_sector = vfs_shadow_read_sector,
     };
     reist_vfs_shadow_object_t locator;
+    reist_file_object_key_t key = {0};
     x86os_file_info_t info;
-    int status = reist_vfs_shadow_fat_object_open(
-        &io, frame->path, frame->path_length, &locator, &info);
+    uint64_t epoch = 0U;
+    int status = vfs_object_guard_snapshot(&epoch);
+    if (status != 0) { frame->result = status; return 0; }
+    status = reist_vfs_shadow_fat_object_open_key(
+        &io, frame->path, frame->path_length, &locator, &info, &key);
     if (status == -2) {
         uint64_t deadline = 0U;
         status = vfs_shadow_deadline(
             VFS_EXT2_READ_DEADLINE_MS, &deadline);
         if (status == 0) {
-            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-            status = reist_vfs_shadow_ext2_object_open_bounded(
+            reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_object_open_bounded_guarded(
                 &ext2_io, frame->path, frame->path_length, open_flags,
                 deadline, &locator, &info);
+            if (status == 0) {
+                key.kind = REIST_FILE_OBJECT_EXT2;
+                key.resource = locator.resource;
+                key.object_a = locator.locator_a;
+            }
         }
     }
     if (status != 0) {
         frame->result = status;
         return 0;
     }
+    uint32_t kernel_pin = 0U;
+    status = vfs_object_guard_pin(&key, epoch, owner_pid, owner_generation, &kernel_pin);
+    if (status != 0) { frame->result = status; return 0; }
+    /* No fallible operation between pin acquisition and slot publication. */
     vfs_object_slot_t *slot = &vfs_objects[free_slot];
     if (slot->generation == 0U) slot->generation = 1U;
     vfs_object_zero(&slot->locator, sizeof(slot->locator));
     for (uint32_t index = 0U; index < sizeof(slot->locator); ++index)
         ((uint8_t *)&slot->locator)[index] = ((uint8_t *)&locator)[index];
     slot->owner_pid = owner_pid;
+    slot->key = key;
+    slot->kernel_pin = kernel_pin;
     slot->owner_generation = owner_generation;
     slot->rights = rights;
     slot->pending = 0U;
+    slot->closing = 0U;
     slot->pending_deadline_ms = 0U;
     slot->in_use = 1U;
     frame->object_token = vfs_object_token(free_slot, slot->generation);
@@ -6208,9 +6309,16 @@ static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
         for (uint32_t index = 0U; index < VFS_OBJECT_CAPACITY; ++index) {
             vfs_object_slot_t *slot = &vfs_objects[index];
             if (slot->in_use == 0U || slot->pending == 0U ||
+                slot->closing != 0U ||
                 slot->owner_pid != owner_pid ||
                 slot->owner_generation != owner_generation ||
                 now_ms >= slot->pending_deadline_ms) continue;
+            int verified = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY);
+            if (verified != 0) {
+                if (verified == -116) (void)vfs_object_release(slot);
+                frame->result = verified;
+                return 0;
+            }
             slot->pending = 0U;
             slot->pending_deadline_ms = 0U;
             frame->flags = slot->rights;
@@ -6231,13 +6339,13 @@ static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
     for (uint32_t index = 0U; index < sizeof(frame->info); ++index)
         if (input_info[index] != 0U) return -22;
     vfs_object_slot_t *slot = 0;
-    int status = vfs_object_resolve(
+    int status = (frame->operation == X86OS_VFS_SHADOW_OBJECT_CLOSE
+        ? vfs_object_resolve_local : vfs_object_resolve)(
         frame->object_token, frame->service_generation, owner_pid,
         owner_generation, service_generation, &slot);
     if (status != 0) { frame->result = status; return 0; }
     if (frame->operation == X86OS_VFS_SHADOW_OBJECT_CLOSE) {
-        vfs_object_release(slot);
-        frame->result = 0;
+        frame->result = vfs_object_release(slot);
         return 0;
     }
     if ((slot->rights & X86OS_VFS_OBJECT_RIGHT_STAT) == 0U) {
@@ -6252,6 +6360,8 @@ static int vfs_object_control(x86os_vfs_shadow_object_frame_t *frame,
     status = slot->locator.filesystem == REIST_VFS_SHADOW_OBJECT_FAT
         ? reist_vfs_shadow_fat_object_stat(&io, &slot->locator, &frame->info)
         : vfs_ext2_object_stat(&slot->locator, &frame->info);
+    if (status == 0) status = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY);
+    if (status != 0) vfs_object_zero(&frame->info, sizeof(frame->info));
     frame->result = status;
     if (status == -116) vfs_object_release(slot);
     return 0;
@@ -6292,6 +6402,7 @@ static int vfs_object_read(x86os_vfs_shadow_object_read_frame_t *frame,
         : vfs_ext2_object_read(
             &slot->locator, frame->offset, frame->data,
             frame->requested, &transferred);
+    if (status == 0) status = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY);
     if (status != 0) {
         for (uint32_t index = 0U; index < sizeof(frame->data); ++index)
             frame->data[index] = 0U;
@@ -6340,6 +6451,7 @@ static int vfs_object_bulk_read(
         : vfs_ext2_object_read(
             &slot->locator, frame->offset, vfs_bulk_data,
             frame->requested, &transferred);
+    if (status == 0) status = vfs_object_guard_slot(slot, REIST_FILE_OBJECT_VERIFY);
     if (status != 0) {
         transferred = 0U;
         if (status == -116) vfs_object_release(slot);
@@ -6407,6 +6519,15 @@ static int vfs_object_delegate(
         frame->result = -5;
         return 0;
     }
+    uint64_t epoch = 0U;
+    uint32_t kernel_pin = 0U;
+    status = vfs_object_guard_snapshot(&epoch);
+    /* Revalidate after the snapshot: no old-media key can become a fresh pin.
+     * The source stays pinned throughout; no path lookup or release/reopen. */
+    if (status == 0) status = vfs_object_guard_slot(source, REIST_FILE_OBJECT_VERIFY);
+    if (status == 0) status = vfs_object_guard_pin(&source->key, epoch,
+        frame->target_pid, frame->target_generation, &kernel_pin);
+    if (status != 0) { frame->result = status; return 0; }
     vfs_object_slot_t *delegated = &vfs_objects[free_slot];
     if (delegated->generation == 0U) delegated->generation = 1U;
     vfs_object_zero(&delegated->locator, sizeof(delegated->locator));
@@ -6414,15 +6535,26 @@ static int vfs_object_delegate(
         ((uint8_t *)&delegated->locator)[index] =
             ((const uint8_t *)&source->locator)[index];
     delegated->owner_pid = frame->target_pid;
+    delegated->key = source->key;
+    delegated->kernel_pin = kernel_pin;
     delegated->owner_generation = frame->target_generation;
     delegated->rights = frame->rights;
     delegated->pending_deadline_ms =
         UINT64_MAX - now_ms < VFS_OBJECT_DELEGATION_TIMEOUT_MS
             ? UINT64_MAX : now_ms + VFS_OBJECT_DELEGATION_TIMEOUT_MS;
     delegated->pending = 1U;
+    delegated->closing = 0U;
     delegated->in_use = 1U;
     frame->result = 0;
     return 0;
+}
+
+static void vfs_object_discard_reply(uint32_t token, int32_t pid,
+        uint32_t generation, uint32_t service_generation) {
+    vfs_object_slot_t *slot = 0;
+    if (vfs_object_resolve_local(token, service_generation, pid, generation,
+                               service_generation, &slot) == 0)
+        (void)vfs_object_release(slot);
 }
 
 static int vfs_symlink_reserved_zero(const uint32_t *reserved) {
@@ -6465,8 +6597,8 @@ static int vfs_symlink_readlink(x86os_vfs_symlink_frame_t *frame) {
         uint64_t deadline = 0U;
         status = vfs_shadow_deadline(VFS_EXT2_READ_DEADLINE_MS, &deadline);
         if (status == 0) {
-            reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-            status = reist_vfs_shadow_ext2_readlink(
+            reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+            status = reist_vfs_shadow_ext2_readlink_guarded(
                 &ext2_io, frame->path, frame->path_length,
                 frame->target, &frame->target_length, deadline);
         }
@@ -6501,8 +6633,8 @@ static int vfs_symlink_create(x86os_vfs_symlink_frame_t *frame) {
     int status = vfs_shadow_deadline(
         VFS_EXT2_MUTATION_DEADLINE_MS, &deadline);
     if (status == 0) {
-        reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
-        status = reist_vfs_shadow_ext2_symlink(
+        reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
+        status = reist_vfs_shadow_ext2_symlink_guarded(
             &ext2_io, frame->target, frame->target_length,
             frame->path, frame->path_length, deadline);
     }
@@ -6556,11 +6688,11 @@ static int vfs_namespace_mutate(x86os_vfs_namespace_frame_t *frame) {
     int status = vfs_shadow_deadline(
         VFS_EXT2_MUTATION_DEADLINE_MS, &deadline);
     if (status == 0) {
-        reist_vfs_shadow_ext2_io_t ext2_io = vfs_shadow_ext2_io();
+        reist_vfs_shadow_ext2_guarded_io_t ext2_io = vfs_shadow_ext2_io();
         status = frame->operation == X86OS_VFS_SHADOW_FS_UNLINK
-            ? reist_vfs_shadow_ext2_unlink(
+            ? reist_vfs_shadow_ext2_unlink_guarded(
                 &ext2_io, frame->source, frame->source_length, deadline)
-            : reist_vfs_shadow_ext2_rename(
+            : reist_vfs_shadow_ext2_rename_guarded(
                 &ext2_io, frame->source, frame->source_length,
                 frame->destination, frame->destination_length, deadline);
     }
@@ -6653,6 +6785,7 @@ int main(void) {
         int result = -95;
         uint8_t object_open_completed = 0U;
         uint8_t object_adopt_completed = 0U;
+        uint32_t object_reply_token = 0U;
         if (request.operation == X86OS_STORAGE_BLOCK_READ &&
             request.length == X86OS_STORAGE_BLOCK_SIZE) {
             result = x86os_storage_block_read(request.resource,
@@ -6684,6 +6817,8 @@ int main(void) {
                 frame.stat.operation == X86OS_VFS_SHADOW_OBJECT_ADOPT &&
                 frame.object.result == 0)
                 object_adopt_completed = 1U;
+            if (object_open_completed != 0U || object_adopt_completed != 0U)
+                object_reply_token = frame.object.object_token;
             if (result == 0)
                 for (uint32_t index = 0U; index < sizeof(frame); ++index)
                     data[index] = frame_bytes[index];
@@ -6806,6 +6941,9 @@ int main(void) {
             result = fat12_record_bad_sector(request.resource,
                                              request.offset);
         int completion = x86os_storage_complete(request.handle, result, data);
+        if (completion != 0 && object_reply_token != 0U)
+            vfs_object_discard_reply(object_reply_token, request.client_pid,
+                request.client_generation, request.service_generation);
         if (completion == -22) continue;
         if (completion != 0) return 3;
         if (identity_marker_emitted == 0U && result == 0 &&

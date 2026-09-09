@@ -339,7 +339,27 @@ static int ext2_vfs_space(vfs_filesystem_t* fs, vfs_space_info_t* info) {
     return VFS_OK;
 }
 
+static int ext2_vfs_object_key(const vfs_node_t* node,
+                              reist_file_object_key_t* key) {
+    if (!node || !node->fs || !key || !node->inode) return VFS_ERR_INVALID;
+    memset(key, 0, sizeof(*key));
+    key->kind = REIST_FILE_OBJECT_EXT2;
+    key->object_a = node->inode;
+    return VFS_OK;
+}
+
+static int ext2_vfs_volume_extent(const vfs_filesystem_t* fs,
+                                   uint32_t* first, uint32_t* count) {
+    if (!fs || !fs->fs_data || !first || !count) return VFS_ERR_INVALID;
+    const ext2_fs_t* volume = (const ext2_fs_t*)fs->fs_data;
+    *first = volume->partition_lba;
+    *count = volume->volume_sectors;
+    return *count ? VFS_OK : VFS_ERR_IO;
+}
+
 static vfs_filesystem_ops_t ext2_vfs_ops = {
+    .object_key = ext2_vfs_object_key,
+    .volume_extent = ext2_vfs_volume_extent,
     .mount = ext2_vfs_mount,
     .unmount = ext2_vfs_unmount,
     .open = ext2_vfs_open,

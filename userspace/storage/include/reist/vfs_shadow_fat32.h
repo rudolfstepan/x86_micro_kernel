@@ -99,6 +99,13 @@ int reist_vfs_shadow_fat_object_open(
     const reist_vfs_shadow_io_t *io, const char *absolute_path,
     uint32_t path_length, reist_vfs_shadow_object_t *object,
     x86os_file_info_t *info);
+/* Same single bounded resolution, additionally projecting the final canonical
+ * directory identity. The key alone is not an admitted pin or access grant.
+ * Resource/physical-volume normalization is the trusted kernel's job. */
+int reist_vfs_shadow_fat_object_open_key(
+    const reist_vfs_shadow_io_t *io, const char *absolute_path,
+    uint32_t path_length, reist_vfs_shadow_object_t *object,
+    x86os_file_info_t *info, reist_file_object_key_t *key);
 int reist_vfs_shadow_fat_object_stat(
     const reist_vfs_shadow_io_t *io,
     const reist_vfs_shadow_object_t *object, x86os_file_info_t *info);

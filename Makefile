@@ -804,6 +804,7 @@ SYSTEM_IMAGE_FILES := \
 	bin/copy.prg=$(SYSTEM_PROGRAM_DIR)/COPY.PRG \
 	bin/rename.prg=$(SYSTEM_PROGRAM_DIR)/RENAME.PRG \
 	bin/ln.prg=$(SYSTEM_PROGRAM_DIR)/LN.PRG \
+	bin/objgdtst.prg=$(SYSTEM_PROGRAM_DIR)/OBJGDTST.PRG \
 	bin/readlink.prg=$(SYSTEM_PROGRAM_DIR)/READLINK.PRG \
 	bin/stat.prg=$(SYSTEM_PROGRAM_DIR)/STAT.PRG \
 	bin/df.prg=$(SYSTEM_PROGRAM_DIR)/DF.PRG \

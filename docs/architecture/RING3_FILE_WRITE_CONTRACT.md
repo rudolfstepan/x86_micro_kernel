@@ -137,5 +137,11 @@ FAT32 und EXT2 eingefroren:
 Er schliesst die gemeinsame Autoritaetsgrenze vor der danach separaten
 persistenten Backendmigration. Keine Aufteilung nach kleinen Flagvarianten.
 Vorhandene15s-Wartungs-Leases und ein zweiter paralleler Journalbesitzer werden
-nicht als Dateischreib-Abkuerzung verwendet. Vertrag/Queue sind vorbereitet;
-Produktionscode und Laufzeitabnahme von R3.38 stehen noch aus.
+nicht als Dateischreib-Abkuerzung verwendet. Vertrag/Queue sind eingefroren.
+R3.38 ist am9. September mit allen20 Gruppen abgenommen. Es verbindet beide
+Registraturen, Service-Pins, Syscall129,
+Medienwiderruf, Supervisor-Fencing und explizit vermittelte EXT2-Recovery und
+Namespace-Transaktionen. Die freigegebene kalte Scheduler-Reparatur verhindert
+Wiederanlauf/Reap waehrend fremdem Cleanup; Taskauswahl/Abrechnung bleiben gleich.
+Native O0/O2, beide Images, Fault/Hang/Restart und bestehende JS-/Browsergaeste
+bestanden. Keine JS-Schreibrechte hinzugefuegt; Backendmigration bleibt Folgearbeit.

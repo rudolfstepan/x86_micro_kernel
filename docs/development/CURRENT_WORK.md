@@ -1,8 +1,234 @@
 # REIST OS – aktueller Arbeitsstand
 
-Stand: 8. September 2026
+Stand: 9. September 2026
 
-## R3.38 vorbereitet: gemeinsame Dateiobjekt-Lebensdauer
+## R3.38 abgenommen: gemeinsame Dateiobjekt-Lebensdauer
+
+Alle20 eingefrorenen Abnahmegruppen bestanden. VFS und Ring-3-Storage teilen
+jetzt generationsgebundene, aliasfeste Dateisperren; Syscall129 ist nur fuer
+die aktuelle Storage-Generation zugelassen. Leseseitige EXT2-Recovery und
+Namespace-Writes reservieren ihre Wirkung explizit. Unbekannter Ausgang,
+Ownerverlust oder Fristablauf sperren das Medium vor einem Dienstneustart.
+Keine neuen JS-Schreibrechte, kein neues persistentes Format.
+
+Die konkret freigegebene Scheduler-Reparatur reserviert vor Process.terminating
+den unbesessenen Task, entfernt dessen Wait-Node und sichert genau einen
+Cleanup-Aufrufer. Wiederanlauf, Wake/Timeout und vorzeitiges Reap sind ausgeschlossen;
+FINISHED folgt erst nach Cleanup. process_begin_exit bleibt eine Einmalzulassung.
+Native O0/O2 pruefen echte Prozess-, Admission-, Terminate-, Dispatch-, Wait-
+und Reap-Funktionen; bereits CPU-besessene und stale Targets bleiben unveraendert.
+Keine neue Remote-Kill-/SMP-Quieszenzgarantie: Die realen Paketgaeste verwenden
+eine CPU. Eine fremde noch CPU-besessene Generation muss der Supervisor zuerst
+quieszent machen und eine abgelehnte Terminierung behandeln; das wird hier
+nicht als allgemeiner AP-Recoverynachweis ausgegeben.
+
+Abschliessende Belege unter `build/codex-agent/r338-file-lifetime/`;
+exakte Befehle in automation/reist-s03b.toml und den results.json-Dateien:
+
+| Gruppe | PASS / Sekunden | Beleg |
+| --- | --- | --- |
+| test_file_object_guard.py |8 Tests /18.114 |guard-final.log |
+| generate_syscall_abi.py --check |0.109 |targeted-final/01.log |
+| test_syscall_abi_source.py |0.262 |targeted-final/02.log |
+| test_script_domain.py |1.514 |targeted-final/03.log |
+| test_open_namespace_locks.py |0.260 |targeted-final/04.log |
+| test_reist_vfs_file_client.py |0.724 |targeted-final/05.log |
+| test_reist_vfs_symlink.py |1.038 |targeted-final/06.log |
+| test_reist_vfs_namespace.py |0.684 |targeted-final/07.log |
+| test_smp.py |7.839 |targeted-final/08.log |
+| test_wait_source.py |0.271 |targeted-final/09.log |
+| test_reist_ipc.py |3.026 |targeted-final/10.log |
+| test_scheduler_slack.py |1.319 |targeted-final/11.log |
+| test_terminal_input.py |37.797 |targeted-final/12.log |
+| VMware -Video vga |80 |../20260908-234524-package-vmware-vga.log |
+| QEMU -Video vga |75 |../20260908-234659-package-qemu-vga.log |
+| Image-/Payloadabgleich |1.371 |artifacts-final/protected.json |
+| Dateilebensdauer-Gast |3 Faelle,13 Shellbefehle /71.007 |guest-prompt/result.json |
+| JS-Runner --file-capabilities |122.670 |js-runner.log; compatibility-final/00.log |
+| JS-Service --restricted-worker |36.047 |js-service-resumed.log; compatibility-resumed/00.log |
+| Externer Browser |91.989 |browser.log; compatibility-resumed/01.log |
+
+Die neun bestehenden Hostgruppen mit nativen Hilfsprogrammen laufen ueber
+measure_cpp_baseline.py; die neue Guard-Gruppe unterdrueckt Windowsdialoge
+selbst. Fristen/Erfolgskriterien wurden nicht gelockert. `guest-final/` bleibt
+als Fehlbeleg erhalten: eine asynchrone Quarantaenemeldung folgte unmittelbar
+auf C:\>, weshalb der Pruefer sie uebersah. Nur die beiden vollstaendigen
+Storage-Recoverymarker werden jetzt auch nach genau diesem Prompt akzeptiert;
+Prefix-/Suffix-/Reihenfolgen-Negativtests und anschliessender voller Gastlauf
+bestehen. Keine Erweiterung der Terminalrechte des Storage-Prozesses.
+Der erste JS-Service-Lauf wurde durch eine naechtliche Zeitunterbrechung
+ungueltig (11490.240s/Deadline; erster Durchlauf erfolgreich, zweiter unvollstaendig).
+Sein Log bleibt erhalten; nur dieser Test wurde mit unveraenderter180s-Frist
+wiederholt. Browser danach einmal erfolgreich; kein fehlgeschlagener Lauf als PASS.
+
+`guest-prompt/normal.log` bestaetigt FAT32/FAT12-Ownerfault, EXT2-Aliase und
+Service-Neustart. Fault und Hang zeigen automatische Quarantaene und Neustart
+VOR svcctl; erneuter manueller Restart hebt die Sperre nicht auf. Unbeteiligte
+Datei und Shell bleiben benutzbar. Beide privaten EXT2-Abbilder entsprechen
+bytegenau dem erwarteten Recovery-Ergebnis SHA256
+d2549e5371ec94698d3aa3eb4f1babe5cd851b2d5db4988e677cc6432a69872d.
+FAT12-Rename bleibt ausdruecklich UNSUPPORTED; keine falsche BUSY-Abnahme.
+
+Alle93 Programme und beide jeweiligen Kernel stimmen mit den Imagebytes
+ueberein. Gegen R3.37 aendern sich STORAGE.PRG und zwei Bytes in JSWORK.PRG
+(0x1193/0x11fd:129 ->130, vorhandener nativer Syscall-Deny-Selbsttest).
+OBJGDTST.PRG kommt hinzu. Alle fuenf Schutzprogramme bleiben bytegleich;
+acht echte Auswahl-/Abrechnungs-/Handoff-/Yield-Funktionen sind quelltextgleich.
+Kein neuer VMware-Performance-/Hardware-WCET- oder Stromausfallnachweis.
+`accepted-reference.json` prueft135 archivierte Dateien einschliesslich beider
+Images/Kernel, aller Programme, Gastmedien und Logs; alte Fehlerbelege bleiben
+unveraendert. Scope:40 eigene Kandidatenpfade innerhalb47 freigegebener Pfade.
+
+R3.38 ist abgeschlossen. Der formale Queueuebergang aktiviert den einzigen
+verbliebenen Eintrag R3.6b, dessen ausdrueckliche Ausfuehrungszurueckstellung
+jedoch erhalten bleibt: kein Start dieses Pakets vor der Browser-/JS-Folgearbeit.
+Als naechstes wird ausschliesslich der naechste persistente Ring-3-Backendschnitt
+gemaess RING3_FILE_WRITE_CONTRACT inventarisiert/eingefroren; in diesem Lauf
+keine spaetere Paketimplementierung. Keine Pushes.
+
+### Historische Umsetzungsschritte (vor der obigen Abnahme)
+
+**Freigegebene Scheduler-Korrektur in Pruefung:** Das Nutzer-„mach weiter“
+beantwortet die konkrete Scope-Anfrage. allowed_files und Vertrag enthalten
+jetzt den kalten Terminierungspfad und fuenf zusaetzliche Lifecycle-Gates.
+Admission reserviert den quieszenten Task unter Prozess -> Task-Lock VOR
+Process.terminating; CPU-Besitz wird ohne Wirkung abgewiesen. Ein separater
+Cleanupzustand verhindert Dispatch, Wake/Timeout, doppeltes Cleanup und Reap.
+Der erweiterte native O0/O2-Nachweis mit echtem Prozess-/Scheduler-/Waitcode
+besteht in `terminate-green.log` (0,989s). Keine Hotpathaenderung oder
+abgeschwaechte process_begin_exit-Assertion. Frische Gesamtgates laufen;
+noch KEINE Abnahme oder Implementierungscommit.
+
+**Historischer Blocker, 8. September:** Der wiederholte normale Gast in
+`build/codex-agent/r338-file-lifetime/guest-owner-witness/normal.log` erreicht
+FAT32/FAT12/EXT2, scheitert aber beim anschliessenden Dienstneustart an
+`KERNEL ASSERTION FAILED: process_begin_exit(process, process_generation)`
+in scheduler.c:1660. Der vorherige Lauf `guest-fat12/normal.log` bestand
+diese Sequenz einmal; damit ist gerade KEINE verlaessliche Laufzeitabnahme
+nachgewiesen. Keine weiteren Gastgates/Commit/Queuefreigabe erfolgt.
+
+Die Ursache ist mit echtem extrahiertem Scheduler-Code deterministisch
+reproduziert: scheduler_terminate_task gibt Locks/Preemption fuer schlafendes
+Cleanup frei, ohne den READY-Task vorher aus der Dispatch-Zulassung zu nehmen.
+claim_task_for_current_cpu kann denselben Task noch waehrend des fremden
+Cleanups uebernehmen. O0 UND O2 melden
+`FILE_OBJECT_GUARD_TERMINATE_FAIL target-redispatched-during-cleanup=1 assertions=0`
+in `terminate-red.log` und den terminate-UUID-Unterverzeichnissen.
+Der damals neue Test `test_terminating_owner_cannot_redispatch` blieb bis zur
+Scope-Freigabe rot, ohne Scheduler oder Assertions zu aendern. Die damaligen
+sechs gruenen Guard-Tests belegten NICHT die komplette aktuelle Gruppe.
+
+Eine sichere Korrektur braucht die atomare Task-Quieszenz und den zugehoerigen
+Scheduler-/Wait-Lifecycle-Nachweis; bloss process_begin_exit idempotent zu
+machen wuerde paralleles Cleanup zulassen und die Assertion verdecken.
+kernel/sched/scheduler.c/.h sowie zugehoerige Scheduler-/Wait-Tests liegen
+damals ausserhalb allowed_files. Die oben dokumentierte Nutzerfreigabe
+erlaubt jetzt gezielt die kalte Lifecycle-Reparatur; Hotpaths bleiben geschuetzt.
+
+Zusaetzliche Zwischenbelege: `guest-fat12/fault.log` zeigt Quarantaene nach
+echter Medienwirkung; die Diskbytes entsprechen bereits exakt dem erwarteten
+Recovery-Ergebnis (SHA256 d2549e5371ec94698d3aa3eb4f1babe5cd851b2d5db4988e677cc6432a69872d).
+Die Fixture hatte eine Terminalmeldung aus einem absichtlich nicht dazu
+berechtigten Storage-Profil erwartet. Die private Fehlerkompilierung benutzt
+jetzt stattdessen den vorhandenen Registerdiagnosepfad (EAX338FA017), ohne neue
+Rechte. Der Pruefer verlangt zusaetzlich automatischen Neustart VOR svcctl,
+exakten Medienbytevergleich und beim Hang Abbruch vor dem verspaeteten UD2.
+Dieser strengere Fault/Hang-Nachweis ist noch OFFEN. Live-Logs und fruehe
+Erkennung eingerueckter Panic-/Assertion-Header verhindern blinde Timeoutwartezeit.
+
+Implementierungskandidat auf Vertragscommit945ebf5c; noch kein Implementierungscommit.
+Alle sichtbaren Aenderungen gehoeren zur direkten Umsetzung dieses Pakets.
+Queue unveraendert: R3.38 aktiv, keine spaeteren JS-Schreibrechte umgesetzt.
+
+- Gemeinsame Admission unter bestehendem VFS-Mutex:256 Legacy-Nodes und16
+  geschuetzte Service-Pins, vier pro Client, monotone Epochen/Generationen,
+  feste SMP-Try-Locks, kein Parser/I/O/Heap unter dem Metadatenlock.
+- FAT12/FAT32/EXT2-Keyprojektionen aus vorhandenen Locatoren; physische
+  Medien-/Partitionsnormalisierung, Ablehnung ueberlappender Zweitmounts.
+  Medienwiderruf sperrt alte Legacy-Mounts bis Close/Unmount/Remount und
+  widerruft Servicepins; unbeteiligte Namespace-Epochen widerrufen nichts.
+- Syscall129 angehaengt (130 Eintraege): nur aktuelle Storage-Generation,
+  komplette Bereichs-/Nullfeldvalidierung und fehlgeschlagener Copyout mit
+  Ruecknahme. Compatibility/Script/Browser erhalten diese Autoritaet nicht.
+- Storage: Snapshot vor Lookup, Pin vor Publikation, VERIFY vor Zugriff und
+  Ergebnispublikation, Delegation mit eigenem Pin, fehlgeschlagener Close
+  bleibt fuer begrenztes Reap vorgemerkt; verlorene Open/Adopt-Antworten geben
+  ihren Pin frei. Keine Wiedereroeffnung ueber einen gespeicherten Pfad.
+- EXT2: explizite Guard-Adapter bei Namespace UND leseseitiger Journal-Recovery.
+  Alte sechsteilige IO-Struktur, Wrapper und v1-Journal bleiben bestehen.
+  Atomare Reservation vor Medienwirkung; NO_EFFECT/DURABLE_COMMIT/UNKNOWN
+  kommen aus dem Backendablauf, nicht aus einer errno-Vermutung.
+- Direkte Block-Write-/Flush-Syscalls koennen den Schutz nicht umgehen:
+  eigene laufende Mutation oder bisheriger exklusiver Wartungs-/Unmountpfad.
+  Unsicherer Mutationsausgang wird zuerst quarantainisiert; erst danach wird
+  ein verlorener/haengender Dienst zurueckgenommen und neu gestartet.
+  Ein Restart hebt die Mediensperre nicht auf.
+- OBJGDTST.PRG in beiden /bin-Layouts; Image- und Gastpruefer ergaenzt.
+  Separate private Storage-Testkompilierungen verlieren eine echte Reservation
+  nach Medienwirkung durch Fault/Hang. Kein solcher Branch im normalen Image.
+
+Acht gezielte eingefrorene Gruppen bestanden auf diesem Kandidaten. Belege
+unter `build/codex-agent/r338-file-lifetime/targeted-c26157191bee44aa87bdd4d30999eeaf/`:
+
+| Befehl | Ergebnis / Sekunden | Log |
+| --- | --- | --- |
+| python test/test_file_object_guard.py -v |5 Tests PASS; echter Kern/VFS/Service/FAT/EXT2, O0/O2, je128 Threads /13.206 |0.log |
+| python scripts/generate_syscall_abi.py --check |PASS,130 Nummern /0.099 |1.log |
+| python test/test_syscall_abi_source.py -v |PASS /0.256 |2.log |
+| python test/test_script_domain.py -v |PASS /1.378 |3.log |
+| python scripts/measure_cpp_baseline.py --host-test test/test_open_namespace_locks.py -v |PASS /0.241 |4.log |
+| python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_file_client.py -v |PASS /0.703 |5.log |
+| python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_symlink.py -v |PASS /1.016 |6.log |
+| python scripts/measure_cpp_baseline.py --host-test test/test_reist_vfs_namespace.py -v |PASS /0.678 |7.log |
+
+Fruehere isolierte Komponentenbelege bleiben erhalten:
+`targeted-472ae04d48ed4a41a6ead1bab19c22f2/` (damals129 Syscalls),
+`review-4503e350996b49f28b50b26479e2e24a/`,
+`compile-7ce09095ec994db8bb4e6d1a08c72fcc/` sowie alle roten/gruenen
+host-/vfs-/service-/ext2-/image-Unterverzeichnisse. Die acht geaenderten
+Kernelmodule wurden zwischenzeitlich fuer i386 kompiliert; der neue Storage-
+Zwischenlink ist196608 Byte, unter224KiB Recovery-Cache. OBJGDTST laesst sich
+mit dem bestehenden SDK plus aktueller Header-/libc-Anbindung linken.
+Das ersetzt keinen aktuellen Image- oder Performancebeweis.
+
+Abschlussreview fand eine fehlende direkte Lifecycle-Anbindung: bisher nur
+Spawnfehler statt gemeinsamer Normal-/Fault-/Terminate-Pfad. Echter extrahierter
+process_close_all_files-Aufruf gegen VFS/Pins ist zuerst rot (cleanup-red.log),
+dann nach Korrektur O0/O2 gruen (cleanup-green.log). Contention behaelt den
+begrenzten deny-only Poll-Backstop. Ausserdem korrigiert die neue Gastfixture
+ihren svcctl-Pfad auf das vorhandene /sbin-Layout (command-path-red.log).
+Die letzte komplette Guard-Gruppe ist command-path-green.log:5 Tests/13.349s.
+Die sieben anderen unveraenderten gezielten Gruppen bleiben wie oben gueltig.
+
+Zwischenstaende der Referenzbuilds PASS: VMware78s
+`build/codex-agent/20260908-230610-package-vmware-vga.log`, QEMU75s
+`build/codex-agent/20260908-230747-package-qemu-vga.log`.
+Fruehere erfolgreiche Buildlogs bleiben als Zwischenstaende erhalten.
+`artifacts/protected.json` bestaetigt beide neu gebauten Kernel in ihren Images,
+alle gepackten Programme und die fuenf unveraenderten Schutzprogramm-Hashes.
+Diese Imagepruefung ist nach der folgenden Gastkorrektur NICHT die finale
+Abnahme. Alle Zwischenbelege bleiben erhalten.
+
+Gast `guest/` scheiterte am Boot: die vorhandenen Backend-Offsets sind relativ
+zum gemounteten Drive, nicht zum physischen Parent. Der VFS-Mediator addiert
+jetzt den geprueften Partitionsoffset exakt einmal. `partition-red.log` zeigt
+den reproduzierten Openfehler; `partition-green.log` beweist O0/O2 auch rohe
+I/O-Grenzen und Ablehnung des ueberlappenden Parent-Alias.
+Die private Floppy-Fixture serialisiert die bestehenden gepackten32-/28-Byte-
+Journal-/Remapheader jetzt korrekt. Native echte Decoder zeigen den bisherigen
+Vorlagenfehler (`floppy-decoder-red.log`) und die Korrektur. Der generische
+Imagebuilder bleibt unberuehrt; kein Datentraegerformat wurde geaendert.
+Letzte komplette Guard-Gruppe:6 Tests/15.505s PASS in
+`partition-floppy-green.log`. Neues QEMU-Image gebaut in
+`build/codex-agent/20260908-231724-package-qemu-vga.log` (26s PASS).
+`guest-partition/` bootet/mountet; die neue Fixture erwartete faelschlich EBUSY
+direkt aus alten Syscalls. Deren eingefrorene Mappingwerte bleiben -2/-5;
+EBUSY wird am echten VFS plus Dateierhalt im Gast bewiesen. `guest-legacy-abi/`
+findet danach den fehlenden IPC-Receive-Header der Fixture; ebenfalls korrigiert.
+Die Gastabnahme wird fortgesetzt, danach VMware/Imageabgleich erneuert. Kein
+Queueuebergang/Commit vor allen Gates, direkter Diffpruefung und Archiv.
+
+### Ausgang und eingefrorener Vertragscheckpoint
 
 Sauberer Ausgang024e4ce7. Die weitergefuehrte FAT-/Ownership-Inventur findet
 zwei getrennte Tabellen:256 Legacy-VFS-Nodes versus16 Ring-3-Serviceobjekte.
@@ -25,8 +251,8 @@ Images und keine JS-Rechte geaendert. Struktur/Dateiliste/Queue,32-/112-Byte-
 Layoutrechnung und git diff --check sind geprueft; Laufzeitgates
 wurden nicht ausgefuehrt und werden nicht als bestanden gebucht.
 
-Naechster Arbeitsschritt: Regression zuerst, dann R3.38 direkt im Hauptworktree
-implementieren und alle eingefrorenen Gates ausfuehren. Die Schreibbackend-
+Der oben dokumentierte Implementierungsstand setzt diesen Vertragscheckpoint
+fort; sein vollstaendiger vertikaler Schnitt ist noch offen. Die Schreibbackend-
 migration und JS-Schreibdelegation sind damit weiterhin nicht abgeschlossen.
 
 ## R3.37 abgenommen: EXT2-Commit-Recovery vor JS3-Schreibrechten

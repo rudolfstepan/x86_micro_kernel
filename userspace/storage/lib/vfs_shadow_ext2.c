@@ -51,6 +51,10 @@ typedef struct {
     uint32_t writes;
     uint32_t flushes;
     uint8_t clock_seen;
+    reist_vfs_shadow_ext2_guard_fn guard;
+    void *guard_context;
+    uint64_t guard_epoch;
+    uint32_t guard_token, guard_resource, guard_outcome;
 } ext2_request_t;
 
 typedef struct {
@@ -185,25 +189,95 @@ static int ext2_request_deadline(ext2_request_t *request) {
     return now >= request->deadline_ms ? -110 : 0;
 }
 
+static reist_file_object_guard_request_t ext2_guard_request(uint32_t operation) {
+    reist_file_object_guard_request_t request = {0};
+    request.version = REIST_FILE_OBJECT_VERSION;
+    request.struct_size = sizeof(request);
+    request.operation = operation;
+    return request;
+}
+
+static int ext2_guard_start(ext2_request_t *request,
+        const reist_vfs_shadow_ext2_guarded_io_t *io, uint64_t deadline_ms) {
+    if (io == 0 || io->guard == 0 || io->io.monotonic_ms == 0 ||
+        deadline_ms == UINT64_MAX) return -22;
+    int status = ext2_request_from_extended(request, &io->io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    if (status != 0) return status;
+    request->guard = io->guard;
+    request->guard_context = io->guard_context;
+    status = ext2_request_deadline(request);
+    if (status != 0) return status;
+    if (deadline_ms - request->last_ms > 5000U) return -22;
+    reist_file_object_guard_request_t snapshot = ext2_guard_request(REIST_FILE_OBJECT_SNAPSHOT);
+    status = request->guard(request->guard_context, &snapshot);
+    if (status == 0) request->guard_epoch = snapshot.epoch;
+    return status;
+}
+
+static int ext2_guard_begin(ext2_request_t *request, uint32_t resource,
+        uint32_t source_inode, uint32_t destination_inode, uint8_t exclusive) {
+    if (request->guard == 0) return 0; /* explicit legacy compatibility caller */
+    if (request->guard_token != 0U) return -16;
+    int status = ext2_request_deadline(request);
+    if (status != 0) return status;
+    reist_file_object_guard_request_t begin = ext2_guard_request(REIST_FILE_OBJECT_MUTATION_BEGIN);
+    begin.keys[0].kind = REIST_FILE_OBJECT_EXT2;
+    begin.keys[0].resource = resource;
+    begin.keys[0].object_a = source_inode;
+    if (destination_inode != 0U) {
+        begin.keys[1] = begin.keys[0];
+        begin.keys[1].object_a = destination_inode;
+    }
+    begin.flags = exclusive != 0U ? REIST_FILE_OBJECT_EXCLUSIVE : 0U;
+    begin.epoch = request->guard_epoch;
+    begin.deadline_ms = request->deadline_ms;
+    status = request->guard(request->guard_context, &begin);
+    if (status == 0) {
+        request->guard_token = begin.token;
+        request->guard_resource = resource;
+        request->guard_outcome = REIST_FILE_OBJECT_NO_EFFECT;
+    }
+    return status;
+}
+
+static int ext2_guard_finish(ext2_request_t *request, int status) {
+    if (request->guard_token == 0U) return status;
+    reist_file_object_guard_request_t end = ext2_guard_request(REIST_FILE_OBJECT_MUTATION_END);
+    end.token = request->guard_token;
+    end.flags = request->guard_outcome;
+    int finished = request->guard(request->guard_context, &end);
+    /* Failed/lost END stays owned until kernel expiry/reap fences the medium.
+     * An errno is never translated to a claimed rollback or durable commit. */
+    if (finished == 0) request->guard_token = 0U;
+    return finished != 0 ? finished : status;
+}
+
 static int ext2_request_write(ext2_request_t *request, uint32_t resource,
         uint32_t sector, const uint8_t data[X86OS_STORAGE_BLOCK_SIZE]) {
     if (request == 0 || request->write_sector == 0 || data == 0) return -30;
+    if (request->guard != 0 && (request->guard_token == 0U ||
+        request->guard_resource != resource)) return -13;
     int status = ext2_request_deadline(request);
     if (status != 0) return status;
     if (request->writes >= REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_WRITES)
         return -110;
     ++request->writes;
+    request->guard_outcome = REIST_FILE_OBJECT_UNKNOWN;
     return request->write_sector(request->context, resource, sector, data) == 0
         ? 0 : -5;
 }
 
 static int ext2_request_flush(ext2_request_t *request, uint32_t resource) {
     if (request == 0 || request->flush == 0) return -30;
+    if (request->guard != 0 && (request->guard_token == 0U ||
+        request->guard_resource != resource)) return -13;
     int status = ext2_request_deadline(request);
     if (status != 0) return status;
     if (request->flushes >= REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_FLUSHES)
         return -110;
     ++request->flushes;
+    request->guard_outcome = REIST_FILE_OBJECT_UNKNOWN;
     return request->flush(request->context, resource) == 0 ? 0 : -5;
 }
 
@@ -1588,14 +1662,20 @@ static int ext2_journal_recover(ext2_request_t *request,
          * target evidence is corruption, never renewed undo authority. Only
          * ACTIVE may restore before-images; refuse before any media write. */
         if (complete == 0U) return -5;
+        status = ext2_guard_begin(request, volume->resource, EXT2_ROOT_INODE, 0U, 1U);
+        if (status != 0) return status;
         status = ext2_journal_clean(
             request, volume, &journal, header->sequence);
+        if (status == 0) request->guard_outcome = REIST_FILE_OBJECT_DURABLE_COMMIT;
         if (status == 0 && journal_out != 0)
             ext2_journal_publish(journal_out, &journal);
         return status;
     }
+    status = ext2_guard_begin(request, volume->resource, EXT2_ROOT_INODE, 0U, 1U);
+    if (status != 0) return status;
     status = ext2_journal_restore(
         request, volume, &journal, header, before);
+    if (status == 0) request->guard_outcome = REIST_FILE_OBJECT_DURABLE_COMMIT;
     if (status == 0 && journal_out != 0)
         ext2_journal_publish(journal_out, &journal);
     return status;
@@ -2079,6 +2159,8 @@ static int ext2_symlink_request(ext2_request_t *request,
             &volume, &directory, inode_number, name, name_length);
     if (status != 0 || ext2_transaction.count == 0U)
         return status != 0 ? status : -5;
+    status = ext2_guard_begin(request, volume.resource, directory_inode, 0U, 0U);
+    if (status != 0) return status;
     status = ext2_transaction_journal(
         request, &volume, &journal, sequence);
     if (status != 0) return status;
@@ -2114,7 +2196,10 @@ static int ext2_symlink_request(ext2_request_t *request,
     if (status == 0)
         status = ext2_journal_clean(
             request, &volume, &journal, sequence);
-    if (status == 0) ext2_transaction_reset();
+    if (status == 0) {
+        request->guard_outcome = REIST_FILE_OBJECT_DURABLE_COMMIT;
+        ext2_transaction_reset();
+    }
     return status;
 }
 
@@ -2598,7 +2683,10 @@ static int ext2_namespace_commit(ext2_request_t *request,
     if (status == 0) status = ext2_request_flush(request, volume->resource);
     if (status == 0)
         status = ext2_journal_clean(request, volume, journal, sequence);
-    if (status == 0) ext2_transaction_reset();
+    if (status == 0) {
+        request->guard_outcome = REIST_FILE_OBJECT_DURABLE_COMMIT;
+        ext2_transaction_reset();
+    }
     return status;
 }
 
@@ -2691,6 +2779,8 @@ static int ext2_unlink_request(ext2_request_t *request,
         status = ext2_clear_inode(&parent_volume, location.inode_number);
     if (status != 0 || ext2_transaction.count == 0U)
         return status != 0 ? status : -5;
+    status = ext2_guard_begin(request, parent_volume.resource, location.inode_number, 0U, 0U);
+    if (status != 0) return status;
     status = ext2_namespace_finish(
         request, &parent_volume, &journal, sequence);
     if (status == 0) {
@@ -2789,6 +2879,8 @@ static int ext2_rename_request(ext2_request_t *request,
     if (status != 0 || (ext2_transaction.count != 1U &&
                         ext2_transaction.count != 2U))
         return status != 0 ? status : -5;
+    status = ext2_guard_begin(request, volume.resource, location.inode_number, 0U, 0U);
+    if (status != 0) return status;
     status = ext2_namespace_finish(request, &volume, &journal, sequence);
     if (status == 0) {
         ext2_shadow_inode_t verify_inode;
@@ -2843,78 +2935,69 @@ static int ext2_bridge_read_sector(void *opaque, uint32_t resource,
     return request->read_sector(request->context, resource, sector, data);
 }
 
-int reist_vfs_shadow_ext2_recover_path(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_recover_path(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length) {
+    int status = 0;
     if (status != 0) return status;
     ext2_shadow_volume_t volume;
     return ext2_recover_path_request(
-        &request, absolute_path, path_length, 0U, &volume, 0);
+        request, absolute_path, path_length, 0U, &volume, 0);
 }
 
-int reist_vfs_shadow_ext2_recover_object(
-        const reist_vfs_shadow_ext2_io_t *io, uint32_t resource,
-        uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_recover_object(ext2_request_t *request,
+        uint32_t resource) {
+    int status = 0;
     if (status != 0) return status;
     ext2_shadow_volume_t volume;
-    status = ext2_volume_for_resource(&request, resource, &volume);
+    status = ext2_volume_for_resource(request, resource, &volume);
     return status == 0
-        ? ext2_journal_recover(&request, &volume, 0U, 0) : status;
+        ? ext2_journal_recover(request, &volume, 0U, 0) : status;
 }
 
-int reist_vfs_shadow_ext2_stat_bounded(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint32_t resolve_flags, uint64_t deadline_ms,
+static int ext2_do_stat_bounded(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t resolve_flags,
         x86os_file_info_t *info) {
     if (info == 0) return -22;
     ext2_zero(info, sizeof(*info));
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_recover_path_request(
-            &request, absolute_path, path_length, 0U, &volume, 0);
+            request, absolute_path, path_length, 0U, &volume, 0);
     ext2_shadow_inode_t inode;
     char visible[256];
     if (status == 0)
         status = ext2_resolve(
-            &request, absolute_path, path_length, resolve_flags,
+            request, absolute_path, path_length, resolve_flags,
             &volume, &inode, visible, 0);
     if (status == 0) ext2_inode_info(&inode, visible, info);
     return status;
 }
 
-int reist_vfs_shadow_ext2_read_bounded(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint32_t offset, uint8_t *data,
-        uint32_t capacity, uint64_t deadline_ms, uint32_t *transferred) {
+static int ext2_do_read_bounded(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint32_t *transferred) {
     if (data == 0 || transferred == 0 || capacity == 0U ||
         capacity > X86OS_VFS_SHADOW_READ_CAPACITY) return -22;
     ext2_zero(data, capacity);
     *transferred = 0U;
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_recover_path_request(
-            &request, absolute_path, path_length, 0U, &volume, 0);
+            request, absolute_path, path_length, 0U, &volume, 0);
     ext2_shadow_inode_t inode;
     char visible[256];
     if (status == 0)
         status = ext2_resolve(
-            &request, absolute_path, path_length, 0U,
+            request, absolute_path, path_length, 0U,
             &volume, &inode, visible, 0);
     if (status == 0)
         status = ext2_read_file(
@@ -2926,27 +3009,25 @@ int reist_vfs_shadow_ext2_read_bounded(
     return status;
 }
 
-int reist_vfs_shadow_ext2_readdir_bounded(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint32_t index,
+static int ext2_do_readdir_bounded(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t index,
         reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
-        uint64_t deadline_ms, x86os_file_info_t *info) {
+        x86os_file_info_t *info) {
     if (cursor == 0 || info == 0) return -22;
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_recover_path_request(
-            &request, absolute_path, path_length, 0U, &volume, 0);
+            request, absolute_path, path_length, 0U, &volume, 0);
     if (status != 0) {
         ext2_readdir_cursor_reset(cursor);
         ext2_zero(info, sizeof(*info));
         return status;
     }
     const reist_vfs_shadow_io_t bridge = {
-        .context = &request,
+        .context = request,
         .drive_info = ext2_bridge_drive_info,
         .read_sector = ext2_bridge_read_sector,
     };
@@ -2954,22 +3035,21 @@ int reist_vfs_shadow_ext2_readdir_bounded(
         &bridge, absolute_path, path_length, index, cursor, info);
 }
 
-int reist_vfs_shadow_ext2_object_open_bounded(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint32_t open_flags, uint64_t deadline_ms,
-        reist_vfs_shadow_object_t *object, x86os_file_info_t *info) {
+static int ext2_do_object_open_bounded(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t open_flags,
+        reist_vfs_shadow_object_t *object,
+        x86os_file_info_t *info) {
     if (object == 0 || info == 0 ||
         (open_flags & ~X86OS_O_NOFOLLOW) != 0U) return -22;
     ext2_zero(object, sizeof(*object));
     ext2_zero(info, sizeof(*info));
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_recover_path_request(
-            &request, absolute_path, path_length, 0U, &volume, 0);
+            request, absolute_path, path_length, 0U, &volume, 0);
     ext2_shadow_inode_t inode;
     char visible[256];
     uint32_t inode_number = 0U;
@@ -2977,7 +3057,7 @@ int reist_vfs_shadow_ext2_object_open_bounded(
         ? REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL : 0U;
     if (status == 0)
         status = ext2_resolve(
-            &request, absolute_path, path_length, resolve_flags,
+            request, absolute_path, path_length, resolve_flags,
             &volume, &inode, visible, &inode_number);
     uint16_t mode = status == 0
         ? ext2_get16(inode.bytes + 0U) & EXT2_S_IFMT : 0U;
@@ -3000,51 +3080,45 @@ int reist_vfs_shadow_ext2_object_open_bounded(
     return 0;
 }
 
-int reist_vfs_shadow_ext2_object_stat_bounded(
-        const reist_vfs_shadow_ext2_io_t *io,
-        const reist_vfs_shadow_object_t *object, uint64_t deadline_ms,
+static int ext2_do_object_stat_bounded(ext2_request_t *request,
+        const reist_vfs_shadow_object_t *object,
         x86os_file_info_t *info) {
     if (object == 0 || info == 0) return -22;
     ext2_zero(info, sizeof(*info));
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_volume_for_resource(
-            &request, object->resource, &volume);
+            request, object->resource, &volume);
     if (status == 0)
-        status = ext2_journal_recover(&request, &volume, 0U, 0);
+        status = ext2_journal_recover(request, &volume, 0U, 0);
     ext2_shadow_inode_t inode;
     if (status == 0)
-        status = ext2_object_inode(&request, object, &volume, &inode);
+        status = ext2_object_inode(request, object, &volume, &inode);
     if (status == 0) ext2_inode_info(&inode, "", info);
     return status;
 }
 
-int reist_vfs_shadow_ext2_object_read_bounded(
-        const reist_vfs_shadow_ext2_io_t *io,
-        const reist_vfs_shadow_object_t *object, uint32_t offset,
-        uint8_t *data, uint32_t capacity, uint64_t deadline_ms,
+static int ext2_do_object_read_bounded(ext2_request_t *request,
+        const reist_vfs_shadow_object_t *object,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
         uint32_t *transferred) {
     if (object == 0 || data == 0 || transferred == 0 || capacity == 0U ||
         capacity > X86OS_STORAGE_BULK_MAX_BYTES) return -22;
     ext2_zero(data, capacity);
     *transferred = 0U;
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_volume_for_resource(
-            &request, object->resource, &volume);
+            request, object->resource, &volume);
     if (status == 0)
-        status = ext2_journal_recover(&request, &volume, 0U, 0);
+        status = ext2_journal_recover(request, &volume, 0U, 0);
     ext2_shadow_inode_t inode;
     if (status == 0)
-        status = ext2_object_inode(&request, object, &volume, &inode);
+        status = ext2_object_inode(request, object, &volume, &inode);
     if (status == 0)
         status = ext2_read_file(
             &volume, &inode, offset, data, capacity, transferred);
@@ -3055,27 +3129,24 @@ int reist_vfs_shadow_ext2_object_read_bounded(
     return status;
 }
 
-int reist_vfs_shadow_ext2_readlink(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
+static int ext2_do_readlink(ext2_request_t *request,
+        const char *absolute_path,
         uint32_t path_length,
         char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
-        uint32_t *target_length, uint64_t deadline_ms) {
+        uint32_t *target_length) {
     if (target == 0 || target_length == 0) return -22;
     ext2_zero(target, X86OS_VFS_SYMLINK_TARGET_CAPACITY);
     *target_length = 0U;
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    int status = 0;
     ext2_shadow_volume_t volume;
     if (status == 0)
         status = ext2_recover_path_request(
-            &request, absolute_path, path_length, 0U, &volume, 0);
+            request, absolute_path, path_length, 0U, &volume, 0);
     ext2_shadow_inode_t inode;
     char visible[256];
     if (status == 0)
         status = ext2_resolve(
-            &request, absolute_path, path_length,
+            request, absolute_path, path_length,
             REIST_VFS_SHADOW_EXT2_NOFOLLOW_FINAL,
             &volume, &inode, visible, 0);
     if (status == 0 &&
@@ -3091,73 +3162,401 @@ int reist_vfs_shadow_ext2_readlink(
     return status;
 }
 
-int reist_vfs_shadow_ext2_symlink(
-        const reist_vfs_shadow_ext2_io_t *io, const char *target,
-        uint32_t target_length, const char *absolute_link_path,
-        uint32_t link_path_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_symlink(ext2_request_t *request,
+        const char *target,
+        uint32_t target_length,
+        const char *absolute_link_path,
+        uint32_t link_path_length) {
+    int status = 0;
     return status == 0
         ? ext2_symlink_request(
-            &request, target, target_length,
+            request, target, target_length,
             absolute_link_path, link_path_length)
         : status;
 }
 
-int reist_vfs_shadow_ext2_unlink_symlink(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_unlink_symlink(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length) {
+    int status = 0;
     return status == 0
         ? ext2_unlink_request(
-            &request, absolute_path, path_length, 1U)
+            request, absolute_path, path_length, 1U)
         : status;
 }
 
-int reist_vfs_shadow_ext2_unlink(
-        const reist_vfs_shadow_ext2_io_t *io, const char *absolute_path,
-        uint32_t path_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_unlink(ext2_request_t *request,
+        const char *absolute_path,
+        uint32_t path_length) {
+    int status = 0;
     return status == 0
         ? ext2_unlink_request(
-            &request, absolute_path, path_length, 0U)
+            request, absolute_path, path_length, 0U)
         : status;
 }
 
-int reist_vfs_shadow_ext2_rename_symlink(
-        const reist_vfs_shadow_ext2_io_t *io, const char *source_path,
-        uint32_t source_length, const char *destination_path,
-        uint32_t destination_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_rename_symlink(ext2_request_t *request,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length) {
+    int status = 0;
     return status == 0
         ? ext2_rename_request(
-            &request, source_path, source_length,
+            request, source_path, source_length,
             destination_path, destination_length, 1U)
         : status;
 }
 
-int reist_vfs_shadow_ext2_rename(
-        const reist_vfs_shadow_ext2_io_t *io, const char *source_path,
-        uint32_t source_length, const char *destination_path,
-        uint32_t destination_length, uint64_t deadline_ms) {
-    ext2_request_t request;
-    int status = ext2_request_from_extended(
-        &request, io, deadline_ms,
-        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+static int ext2_do_rename(ext2_request_t *request,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length) {
+    int status = 0;
     return status == 0
         ? ext2_rename_request(
-            &request, source_path, source_length,
+            request, source_path, source_length,
             destination_path, destination_length, 0U)
         : status;
+}
+
+/* Compatibility entry points retain their IO layout; production Storage uses
+ * the explicit guarded variants. Every guarded exit ends its reservation. */
+int reist_vfs_shadow_ext2_recover_path(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_recover_path(&request, absolute_path, path_length) : status;
+}
+
+int reist_vfs_shadow_ext2_recover_path_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_recover_path(&request, absolute_path, path_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_recover_object(const reist_vfs_shadow_ext2_io_t *io,
+        uint32_t resource,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_recover_object(&request, resource) : status;
+}
+
+int reist_vfs_shadow_ext2_recover_object_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        uint32_t resource,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_recover_object(&request, resource);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_stat_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t resolve_flags,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_stat_bounded(&request, absolute_path, path_length, resolve_flags, info) : status;
+}
+
+int reist_vfs_shadow_ext2_stat_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t resolve_flags,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_stat_bounded(&request, absolute_path, path_length, resolve_flags, info);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_read_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_read_bounded(&request, absolute_path, path_length, offset, data, capacity, transferred) : status;
+}
+
+int reist_vfs_shadow_ext2_read_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_read_bounded(&request, absolute_path, path_length, offset, data, capacity, transferred);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_readdir_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t index,
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_readdir_bounded(&request, absolute_path, path_length, index, cursor, info) : status;
+}
+
+int reist_vfs_shadow_ext2_readdir_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t index,
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_readdir_bounded(&request, absolute_path, path_length, index, cursor, info);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_object_open_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t open_flags,
+        uint64_t deadline_ms,
+        reist_vfs_shadow_object_t *object,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_object_open_bounded(&request, absolute_path, path_length, open_flags, object, info) : status;
+}
+
+int reist_vfs_shadow_ext2_object_open_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t open_flags,
+        uint64_t deadline_ms,
+        reist_vfs_shadow_object_t *object,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_object_open_bounded(&request, absolute_path, path_length, open_flags, object, info);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_object_stat_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_object_stat_bounded(&request, object, info) : status;
+}
+
+int reist_vfs_shadow_ext2_object_stat_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_object_stat_bounded(&request, object, info);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_object_read_bounded(const reist_vfs_shadow_ext2_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_object_read_bounded(&request, object, offset, data, capacity, transferred) : status;
+}
+
+int reist_vfs_shadow_ext2_object_read_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_object_read_bounded(&request, object, offset, data, capacity, transferred);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_readlink(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
+        uint32_t *target_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_readlink(&request, absolute_path, path_length, target, target_length) : status;
+}
+
+int reist_vfs_shadow_ext2_readlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
+        uint32_t *target_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_readlink(&request, absolute_path, path_length, target, target_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_symlink(const reist_vfs_shadow_ext2_io_t *io,
+        const char *target,
+        uint32_t target_length,
+        const char *absolute_link_path,
+        uint32_t link_path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_symlink(&request, target, target_length, absolute_link_path, link_path_length) : status;
+}
+
+int reist_vfs_shadow_ext2_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *target,
+        uint32_t target_length,
+        const char *absolute_link_path,
+        uint32_t link_path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_symlink(&request, target, target_length, absolute_link_path, link_path_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_unlink_symlink(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_unlink_symlink(&request, absolute_path, path_length) : status;
+}
+
+int reist_vfs_shadow_ext2_unlink_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_unlink_symlink(&request, absolute_path, path_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_unlink(const reist_vfs_shadow_ext2_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_unlink(&request, absolute_path, path_length) : status;
+}
+
+int reist_vfs_shadow_ext2_unlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_unlink(&request, absolute_path, path_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_rename_symlink(const reist_vfs_shadow_ext2_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_rename_symlink(&request, source_path, source_length, destination_path, destination_length) : status;
+}
+
+int reist_vfs_shadow_ext2_rename_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_rename_symlink(&request, source_path, source_length, destination_path, destination_length);
+    return ext2_guard_finish(&request, status);
+}
+
+int reist_vfs_shadow_ext2_rename(const reist_vfs_shadow_ext2_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_request_from_extended(&request, io, deadline_ms,
+        REIST_VFS_SHADOW_EXT2_MAX_TRANSACTION_READS);
+    return status == 0 ? ext2_do_rename(&request, source_path, source_length, destination_path, destination_length) : status;
+}
+
+int reist_vfs_shadow_ext2_rename_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms) {
+    ext2_request_t request;
+    int status = ext2_guard_start(&request, io, deadline_ms);
+    if (status != 0) return status;
+    status = ext2_do_rename(&request, source_path, source_length, destination_path, destination_length);
+    return ext2_guard_finish(&request, status);
 }

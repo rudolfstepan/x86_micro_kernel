@@ -15,6 +15,7 @@
 #include "drivers/block/block_device.h"
 #include "drivers/block/fdd.h"
 #include "include/kernel/critical_object.h"
+#include "fs/vfs/vfs.h"
 #include "include/kernel/admin_maintenance.h"
 #include "include/kernel/filesystem_safety.h"
 #include "include/kernel/storage_request_pool.h"
@@ -215,6 +216,8 @@ static bool capture_fingerprint(uint32_t resource) {
     };
     fingerprint.partition_guid_crc32 = partition_guid_crc32(drive);
     canonical_model_prefix(fingerprint.model_prefix, drive->model);
+    if ((fingerprint_ready_mask & (1U << resource)) != 0U)
+        vfs_file_object_guard_media_changed(resource);
     if (critical_object_init(&media_fingerprints[resource],
             STORAGE_MEDIA_FINGERPRINT_VERSION, &fingerprint,
             sizeof(fingerprint)) != 0) return false;
@@ -405,6 +408,7 @@ int storage_service_bind(int pid, uint32_t generation) {
         return -84;
     }
     printf("REIST_STORAGE SERVICE_READY\n");
+    printf("REIST_STORAGE SERVICE_IDENTITY pid=%d generation=%u\n", pid, generation);
     if (control.post_ready_cpu_affinity_mask != 0U &&
         process_set_supervised_affinity(
             control.pid, control.generation,
@@ -721,6 +725,7 @@ bool storage_service_report_media_failure(uint32_t resource,
         storage_fence_writes();
         filesystem_fence_mutations();
     }
+    if (report_quarantine) vfs_file_object_guard_media_changed(resource);
     if (report_quarantine)
         (void)__atomic_fetch_or(&pending_quarantine_reports, mask,
                                 __ATOMIC_RELEASE);
@@ -728,6 +733,8 @@ bool storage_service_report_media_failure(uint32_t resource,
 }
 
 static void poll_media_reintegration(uint64_t now_ms) {
+    uint32_t object_fences = 0;
+    if (vfs_file_object_guard_fenced(&object_fences) != 0) return;
     storage_service_control_t control;
     if (control_read(&control) != 0) {
         storage_fence_writes();
@@ -742,7 +749,8 @@ static void poll_media_reintegration(uint64_t now_ms) {
     bool found = false;
     for (uint32_t count = 0U; count < MAX_DRIVES; ++count) {
         uint32_t candidate = (control.probe_cursor + count) % MAX_DRIVES;
-        if ((control.quarantined_resources & (1U << candidate)) == 0U)
+        if ((control.quarantined_resources & (1U << candidate)) == 0U ||
+            (object_fences & (1U << candidate)) != 0U)
             continue;
         resource = candidate;
         found = true;
@@ -839,7 +847,9 @@ static void poll_media_reintegration(uint64_t now_ms) {
 }
 
 void storage_service_poll(uint64_t now_ms) {
+    static uint32_t observed_object_fences;
     if (!initialized) return;
+    if (vfs_file_object_guard_poll(now_ms) != 0) return;
     storage_service_emit_pending_quarantine();
     poll_media_reintegration(now_ms);
     if (!service_administratively_enabled) return;
@@ -849,6 +859,21 @@ void storage_service_poll(uint64_t now_ms) {
         storage_fence_writes();
         filesystem_fence_mutations();
         return;
+    }
+    uint32_t object_fences = 0U;
+    if (vfs_file_object_guard_fenced(&object_fences) != 0) return;
+    if ((object_fences & ~observed_object_fences) != 0U) {
+        /* The VFS guard has already published quarantine before dropping its
+         * mutex. A timed-out mutation must not leave a healthy-looking but
+         * hung Storage process serving unrelated volumes indefinitely. */
+        if (control.pid > 0) {
+            storage_request_unbind_service(control.pid, control.generation);
+            if (process_identity_alive(control.pid, control.generation))
+                (void)process_terminate(control.pid);
+            control.healthy = 0U;
+            control.start_deadline_ms = 0U;
+        }
+        observed_object_fences |= object_fences;
     }
     if (control.pid != 0 && process_identity_alive(
             control.pid, control.generation) &&

@@ -1574,6 +1574,29 @@ bool scheduler_can_sleep(void) {
            !scheduler_preempt_is_disabled();
 }
 
+bool scheduler_reserve_termination_locked(int task_id, const Process *owner,
+                                          uint32_t generation) {
+    KASSERT_IRQ_DISABLED();
+    KASSERT(process_table_lock_is_owned());
+    if (task_id < 0 || owner == NULL || generation == 0U) return false;
+    spinlock_acquire(&task_table_lock);
+    bool accepted = false;
+    if (task_id < num_tasks && task_id != current_task) {
+        task_t *task = &tasks[task_id];
+        if (task->process == owner && task->process_generation == generation &&
+            owner->generation == generation && owner->is_running &&
+            !owner->terminating && task->running_cpu == TASK_CPU_NONE &&
+            (task->status == TASK_READY || task->status == TASK_WAITING ||
+             task->status == TASK_SLEEPING || task->status == TASK_PREPARED)) {
+            wait_queue_cancel_locked(task);
+            task->status = TASK_TERMINATION_PENDING;
+            accepted = true;
+        }
+    }
+    spinlock_release(&task_table_lock);
+    return accepted;
+}
+
 void scheduler_terminate_task(int task_id) {
     KASSERT_NOT_IRQ();
     KASSERT(irq_enabled());
@@ -1591,7 +1614,7 @@ void scheduler_terminate_task(int task_id) {
     Process *process = task->process;
     uint32_t generation = task->process_generation;
     uint32_t task_generation = task->task_generation;
-    if (task->status == TASK_FINISHED || task->status == TASK_REAPING ||
+    if (task->status != TASK_TERMINATION_PENDING ||
         task->running_cpu != TASK_CPU_NONE ||
         process == NULL || process->generation != generation ||
         !process->terminating) {
@@ -1599,12 +1622,12 @@ void scheduler_terminate_task(int task_id) {
         process_table_unlock_irqrestore(process_flags);
         return;
     }
+    task->status = TASK_TERMINATING;
     spinlock_release(&task_table_lock);
     process_table_unlock_irqrestore(process_flags);
 
-    /* VFS teardown may sleep in block-driver mutexes. The terminating marker
-     * and running_cpu == NONE pin the target identity while the calling task
-     * is allowed to be scheduled normally. */
+    /* VFS teardown may sleep. The reserved state excludes dispatch, wakeup,
+     * a second cleanup and premature reaping throughout those sleeps. */
     scheduler_preempt_enable();
     scheduler_abandon_task_mutexes(task_id, task_generation);
     /* Revoke DMA and mask device IRQs before any capability or address-space
@@ -1620,7 +1643,10 @@ void scheduler_terminate_task(int task_id) {
     uint32_t flags = process_table_lock_irqsave();
     spinlock_acquire(&task_table_lock);
     KASSERT(task->process == process &&
-            task->process_generation == generation);
+            task->process_generation == generation &&
+            task->task_generation == task_generation &&
+            task->status == TASK_TERMINATING &&
+            task->running_cpu == TASK_CPU_NONE);
     wait_queue_cancel_locked(task);
     process->exit_status = 143;
     process->has_exited = true;

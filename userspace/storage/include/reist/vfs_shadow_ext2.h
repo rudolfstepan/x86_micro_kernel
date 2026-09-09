@@ -39,6 +39,17 @@ typedef struct {
     reist_vfs_shadow_ext2_monotonic_fn monotonic_ms;
 } reist_vfs_shadow_ext2_io_t;
 
+/* Explicit host adapter for the shared lifetime contract. The six-callback
+ * legacy IO layout stays unchanged. The parser never invokes OS syscalls;
+ * only this trusted host callback may mediate its fixed guard requests. */
+typedef int (*reist_vfs_shadow_ext2_guard_fn)(void *context,
+    reist_file_object_guard_request_t *request);
+typedef struct {
+    reist_vfs_shadow_ext2_io_t io;
+    void *guard_context;
+    reist_vfs_shadow_ext2_guard_fn guard;
+} reist_vfs_shadow_ext2_guarded_io_t;
+
 /** Replaceable, non-authoritative continuation hint for EXT2 readdir. */
 typedef struct {
     uint32_t version;
@@ -143,5 +154,99 @@ int reist_vfs_shadow_ext2_recover_path(
 int reist_vfs_shadow_ext2_recover_object(
     const reist_vfs_shadow_ext2_io_t *io, uint32_t resource,
     uint64_t deadline_ms);
+
+/* Same bounded Linux EXT2 subset and errno semantics. On error, output is not
+ * publishable. No implicit authority is added to the compatibility API. */
+int reist_vfs_shadow_ext2_recover_path_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_recover_object_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        uint32_t resource,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_stat_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t resolve_flags,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info);
+
+int reist_vfs_shadow_ext2_read_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred);
+
+int reist_vfs_shadow_ext2_readdir_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t index,
+        reist_vfs_shadow_ext2_readdir_cursor_t *cursor,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info);
+
+int reist_vfs_shadow_ext2_object_open_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint32_t open_flags,
+        uint64_t deadline_ms,
+        reist_vfs_shadow_object_t *object,
+        x86os_file_info_t *info);
+
+int reist_vfs_shadow_ext2_object_stat_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint64_t deadline_ms,
+        x86os_file_info_t *info);
+
+int reist_vfs_shadow_ext2_object_read_bounded_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const reist_vfs_shadow_object_t *object,
+        uint32_t offset,
+        uint8_t *data,
+        uint32_t capacity,
+        uint64_t deadline_ms,
+        uint32_t *transferred);
+
+int reist_vfs_shadow_ext2_readlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        char target[X86OS_VFS_SYMLINK_TARGET_CAPACITY],
+        uint32_t *target_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *target,
+        uint32_t target_length,
+        const char *absolute_link_path,
+        uint32_t link_path_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_unlink_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_unlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *absolute_path,
+        uint32_t path_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_rename_symlink_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms);
+
+int reist_vfs_shadow_ext2_rename_guarded(const reist_vfs_shadow_ext2_guarded_io_t *io,
+        const char *source_path,
+        uint32_t source_length,
+        const char *destination_path,
+        uint32_t destination_length,
+        uint64_t deadline_ms);
 
 #endif

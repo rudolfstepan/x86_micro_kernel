@@ -249,6 +249,12 @@ PROGRAMS = {
         ROOT / "userspace/storage/lib/vfs_file_client.c",
         ROOT / "userspace/storage/lib/vfs_path.c",
     ),
+    "OBJGDTST.PRG": (
+        ROOT / "userspace/programs/objgdtst.c",
+        ROOT / "userspace/storage/lib/vfs_file_client.c",
+        ROOT / "userspace/storage/lib/vfs_namespace_client.c",
+        ROOT / "userspace/storage/lib/vfs_path.c",
+    ),
     "REIST.PRG": ROOT / "userspace/programs/reist_probe.c",
     "STORAGE.PRG": (
         ROOT / "userspace/programs/storage_service.c",
@@ -377,7 +383,7 @@ def main() -> None:
                 dependency_files.append(ROOT / "userspace/gui/apps/display/display_model.h")
             if name in {"STORAGE.PRG", "STAT.PRG", "HTTPD.PRG", "CAT.PRG",
                         "LS.PRG", "TREE.PRG", "FIND.PRG", "DESKTOP.PRG",
-                        "SHELL.PRG", "GTEST.PRG", "IMAGEVIEWER.PRG",
+                        "SHELL.PRG", "GTEST.PRG", "OBJGDTST.PRG", "IMAGEVIEWER.PRG",
                         "LN.PRG", "READLINK.PRG", "DEL.PRG",
                         "RENAME.PRG", "RM.PRG", "BROWSER.PRG", "DISPLAY.PRG", "MOUSE.PRG", "JS.PRG", "JSRUNTST.PRG"}:
                 dependency_files.extend(storage_headers)
@@ -449,7 +455,7 @@ def main() -> None:
                 link_libraries.extend([sdk.math_library, sdk.libc_library])
                 dependency_files.extend(sdk.math_include_dir.glob("*.h"))
                 dependency_files.extend([ROOT / "test/math_vectors.h", Path(__file__).resolve()])
-            if name in {"MEMTEST.PRG", "DISPLAY.PRG", "MOUSE.PRG"}:
+            if name in {"MEMTEST.PRG", "DISPLAY.PRG", "MOUSE.PRG", "OBJGDTST.PRG"}:
                 includes.insert(0, sdk.libc_include_dir)
                 link_libraries.append(sdk.libc_library)
                 dependency_files.extend(sdk.libc_include_dir.rglob("*.h"))

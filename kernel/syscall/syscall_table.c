@@ -1624,16 +1624,21 @@ static int syscall_storage_block_write(uint32_t resource, uint32_t block,
     uint8_t data[STORAGE_REQUEST_BLOCK_SIZE];
     uint8_t verify[STORAGE_REQUEST_BLOCK_SIZE];
     if (copy_from_user(data, user_data, sizeof(data)) != 0) return -14;
+    int admission = vfs_file_object_guard_io_begin(resource, block, false,
+        process->pid, process->generation);
+    if (admission != 0) return admission;
     bool written = false;
     bool verified = false;
     if (drive->type == DRIVE_TYPE_FDD) {
-        if (drive->sector == 0U || drive->head == 0U) return -22;
+        if (drive->sector == 0U || drive->head == 0U) {
+            vfs_file_object_guard_io_end(); return -22;
+        }
         uint32_t track_size = drive->sector * drive->head;
         uint32_t cylinder = block / track_size;
         uint32_t within = block % track_size;
         uint32_t head = within / drive->sector;
         uint32_t sector = within % drive->sector + 1U;
-        if (cylinder >= drive->cylinder) return -22;
+        if (cylinder >= drive->cylinder) { vfs_file_object_guard_io_end(); return -22; }
         written = fdc_write_sectors(drive->fdd_drive_no, (uint8_t)head,
             (uint8_t)cylinder, (uint8_t)sector, 1U, data);
         verified = written && fdc_read_sector(drive->fdd_drive_no,
@@ -1647,8 +1652,10 @@ static int syscall_storage_block_write(uint32_t resource, uint32_t block,
     verified = verified && memcmp(data, verify, sizeof(data)) == 0;
     if (!verified) {
         (void)storage_service_report_media_failure(resource, true);
+        vfs_file_object_guard_io_end();
         return -5;
     }
+    vfs_file_object_guard_io_end();
     return 0;
 }
 
@@ -1657,8 +1664,15 @@ static int syscall_storage_block_flush(uint32_t resource) {
     if (process == NULL || !storage_service_authorized(
             process->pid, process->generation) ||
         resource >= (uint32_t)drive_count) return -13;
-    return block_device_flush(&detected_drives[resource]) == BLOCK_DEVICE_OK
-        ? 0 : -5;
+    if (!storage_service_resource_available(resource) ||
+        storage_service_resource_read_only(resource)) return -30;
+    int admission = vfs_file_object_guard_io_begin(resource, 0, true,
+        process->pid, process->generation);
+    if (admission != 0) return admission;
+    int result = block_device_flush(&detected_drives[resource]) == BLOCK_DEVICE_OK ? 0 : -5;
+    if (result != 0) (void)storage_service_report_media_failure(resource, true);
+    vfs_file_object_guard_io_end();
+    return result;
 }
 
 static int syscall_storage_media_commit(uint32_t resource,
@@ -3157,6 +3171,34 @@ static int syscall_wait(int pid, int *user_status) {
     }
 }
 
+static int syscall_file_object_guard(reist_file_object_guard_request_t* user_request) {
+    Process* process = scheduler_current_process();
+    if (!process || !storage_service_authorized(process->pid, process->generation)) return -13;
+    page_directory_t* directory = paging_current_directory();
+    uint32_t address = (uint32_t)(uintptr_t)user_request;
+    if (!user_request || !user_range_accessible(directory, address,
+            sizeof(*user_request), false) || !user_range_accessible(directory, address,
+            sizeof(*user_request), true)) return -14;
+    reist_file_object_guard_request_t request;
+    _Static_assert(sizeof(request) == 112U, "file object guard ABI drift");
+    if (copy_from_user(&request, user_request, sizeof(request))) return -14;
+    int result = vfs_file_object_guard_request(&request, process->pid, process->generation);
+    if (result) return result;
+    if (copy_to_user(user_request, &request, sizeof(request))) {
+        if (request.operation == REIST_FILE_OBJECT_PIN ||
+            request.operation == REIST_FILE_OBJECT_MUTATION_BEGIN) {
+            int rollback = vfs_file_object_guard_cancel_undelivered(
+                &request, process->pid, process->generation);
+            /* If cleanup cannot be established, retire this service through
+             * the existing lifecycle instead of leaving an undiscoverable pin. */
+            if (rollback && rollback != -REIST_ESTALE)
+                (void)process_terminate(process->pid);
+        }
+        return -14;
+    }
+    return 0;
+}
+
 static int syscall_process_restrict(const void *user_request) {
     reist_process_restrict_request_t request;
     _Static_assert(sizeof(request) == 16U, "process restriction ABI drift");
@@ -3899,6 +3941,7 @@ void* syscall_table[512] __attribute__((section(".syscall_table"))) = {
     (void*)&syscall_cpu_topology,        // Syscall 126: Read CPU topology
     (void*)&syscall_terminal_input,      // Syscall 127: Foreground input lifecycle
     (void*)&syscall_process_restrict,    // Syscall 128: Irreversible self restriction
+    (void*)&syscall_file_object_guard,   // Syscall 129: Storage-only lifetime guard
     // Add more syscalls here as needed
 };
 
@@ -4052,6 +4095,10 @@ void syscall_handler(Registers* regs) {
             break;
         case SYS_PROCESS_RESTRICT:
             result = (uint32_t)syscall_process_restrict((const void *)(uintptr_t)arg1);
+            break;
+        case SYS_FILE_OBJECT_GUARD:
+            result = (uint32_t)syscall_file_object_guard(
+                (reist_file_object_guard_request_t*)(uintptr_t)arg1);
             break;
         case SYS_PROCESS_INFO:
             scheduler_preempt_disable();

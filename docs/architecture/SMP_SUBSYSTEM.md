@@ -205,8 +205,16 @@ zur korrespondierenden Freigabe; Konkurrenz liefert unmittelbar `-EAGAIN`.
 Damit kann ein Timertick keinen `owner_task=-1`-Besitzer vom einzigen späteren
 Freigabepfad verdrängen. Prozess-Exit und fremde Terminierung halten dagegen
 keinen Präemptionsguard über VFS- oder Block-I/O: `terminating`, Generation und
-atomarer `running_cpu`-Besitz pinnen die Identität während sleepbarer
-Ressourcenfreigabe.
+atomarer `running_cpu`-Besitz pinnen beim Selbstaustritt die Identität während
+sleepbarer Ressourcenfreigabe. Fremde Terminierung reserviert dagegen unter
+`Prozess -> Scheduler` zuerst den unbesessenen Task generationsgeprueft als
+`TASK_TERMINATION_PENDING` und entfernt seinen Wait-Node, bevor der Prozess
+`terminating` publiziert. CPU-besessene Tasks werden ohne Wirkung abgewiesen;
+ihre bestehenden Supervisorpfade muessen zuerst die begrenzte Quieszenz
+herstellen. `TASK_TERMINATING` reserviert anschliessend genau einen
+Cleanup-Aufrufer. Beide Zustaende sind weder runnable noch reapbar und koennen
+durch Wakeup oder Timeout nicht READY werden. Erst der abschliessende Commit
+publiziert FINISHED. Taskauswahl, Abrechnung und Kontextwechsel bleiben gleich.
 
 ATA-, AHCI- und FDD-Fencezustand wird vor einem möglichen Mutex-Warten atomar
 publiziert. Hardware-Quieszenz und Fence-Rücknahme erfolgen anschließend unter

@@ -29,6 +29,7 @@ class ScriptDomainTests(unittest.TestCase):
         definitions = header[header.index('#define MAX_PROGRAMS'):header.index('struct vfs_node;')]
         code = '\n'.join(function(proc, name) for name in (
             'static void profile_allow(', 'static bool initialize_domain_profile(',
+            'bool process_file_object_owner_live(',
             'bool process_syscall_allowed(', 'int process_restrict_script(',
             'int process_get_info_for(', 'int process_get_info('))
         code += '\n' + function(old, 'static bool initialize_domain_profile(').replace(
