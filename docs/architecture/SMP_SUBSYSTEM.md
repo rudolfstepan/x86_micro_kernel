@@ -323,6 +323,19 @@ Storage-Service-Crash-/Restartpfad. Die Ersatzgeneration bindet und publiziert
 Ready auf CPU 0; erst danach wird die Maske erneut angewandt. Stale Requests
 bleiben generationsgebunden abgewiesen, während ATA/AHCI/FDD und PIC-IRQ auf
 dem BSP verbleiben.
+R3.39 schliesst die noch offene Retirement-Grenze: Eine abgelehnte Terminierung
+einer CPU-besessenen Generation ist keine Stilllegung. Der Storage-Koordinator
+widerruft zuerst Bind-/I/O-Autoritaet, fordert BSP-Affinitaet an und versucht
+pro Poll genau eine generationsgepruefte Terminierung. PID/Generation bleiben
+bis zum tatsaechlichen Prozess-Reap erhalten. Nach1000ms bleibt der Dienst
+gesperrt; nur ein expliziter neuer Adminversuch darf dieselbe alte Generation
+erneut stilllegen. Ein Integritaets-/Publikationsfehler bleibt auch dann gesperrt.
+Vorbereiteter Spawn publiziert Identitaet vor Runnable. Automatischer Ersatz
+behaelt die AP-Zielmaske; der bestehende explizite Down/Up-Reset loescht sie.
+Keine Aenderung an Scheduler-Hotpaths oder Garantie eines gewaltsamen AP-Kills.
+Alle12 Gruppen sind abgenommen; echte1-/4-CPU-Fault-/Hang-/Restart-Belege und
+genaue Grenzen in CURRENT_WORK R3.39. Nichtkooperierende CPU-Erschoepfung ist
+nativ modelliert, nicht als gewaltsamer Hardware-Remote-Kill nachgewiesen.
 R6.2j erweitert nur die gesunde vierte Generation des überwachten
 Netzwerkdiensts. Crash-, Hang- und Invalid-Reply-Bootstrap bleiben vollständig
 auf CPU 0. Nach Self-Test, Fortschritt, `SERVICE_READY` und

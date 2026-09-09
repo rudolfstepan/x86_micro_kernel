@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.39-storage-generation-retirement"
-next_user_request = "2026-09-09: Continue JS3 prerequisites on08c8c364. Backend inventory found ignored termination refusal in Storage poll/up: freeze and implement the complete Storage retirement/replacement boundary first, then persistent Ring-3 backend and explicit JS writes. R3.6b remains deferred. Main worktree only, no agents or push."
+active_id = "R3.6b-vmware-pointer-pinned-mutex"
+next_user_request = "2026-09-09: R3.39 Storage retirement accepted, all12 groups. Continue with the explicit persistent Ring-3 backend contract and implementation before JS writes; default FAT images and exclusive journal ownership must be addressed. R3.6b remains execution-deferred despite the formal next-queued transition. No agents or push."
 
 [policy]
 one_package_per_run = true
@@ -13,7 +13,7 @@ push = false
 
 [[packages]]
 id = "R3.39-storage-generation-retirement"
-status = "active"
+status = "done"
 phase = "post-s0"
 risk = "high"
 title = "Revoke, quiesce and reap the old Storage generation before replacement"
@@ -26,6 +26,7 @@ runtime_tests = ["python scripts/verify_storage_retirement_artifacts.py --eviden
 acceptance = "All12 groups. Native actual lifecycle/termination O0/O2, existing scheduler proof, both images/new kernels/all93 unchanged payloads, 1CPU and4CPU headless guest automatic fault/hang and manual replacement with exact retired-generation ordering, unchanged uncertain-media fencing and independent shell/volume. No physical SMP kill or performance claim. Review/archive before queue transition and local commit."
 stop_conditions = ["Unattributed or overlapping changes", "Source outside allowed_files required", "Failed gate without focused correction", "New scheduler hotpath or async CPU-kill mechanism needed"]
 commit_message = "fix: retire Storage generations before starting replacements"
+evidence_note = "All12 groups passed; final commands/times/logs in CURRENT_WORK R3.39. Native4 tests O0/O2 include exact-generation termination, delayed reap/refusal/exhaustion, prepared startup and sticky publication failure. Both images/new kernels/all93 unchanged PRGs verified. Final guest-final/result.json passes all5 cases and21 shell commands on1/4CPUs in107.735s. Original guest/result.json remains FAIL: character-interleaved AP/GUI records; only the new verifier gained bounded exact two-record deinterleaving, with negatives. JS-file runner129.432s and browser103.090s pass. Initial VMware build superseded only for the regression-proven publication failure repair; final builds22s/77s. Scheduler/CPU-local source unchanged. No JS write, asynchronous AP-kill, new format or VMware throughput claim. Formal R3.6b transition does not revoke its explicit deferral."
 
 [[packages]]
 id = "R3.38-file-object-lifetime"
@@ -2389,7 +2390,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "queued"
+status = "active"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

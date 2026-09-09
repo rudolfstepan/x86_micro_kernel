@@ -27,8 +27,11 @@
 #include "lib/libc/string.h"
 #include "kernel/time/pit.h"
 
-#define STORAGE_SERVICE_CONTROL_VERSION 3U
+#define STORAGE_SERVICE_CONTROL_VERSION 4U
 #define STORAGE_SERVICE_START_TIMEOUT_MS 1000U
+#define STORAGE_SERVICE_RETIRE_TIMEOUT_MS 1000U
+#define STORAGE_RETIRE_PENDING 1U
+#define STORAGE_RETIRE_EXHAUSTED 2U
 #define STORAGE_SERVICE_RESTART_BUDGET 3U
 #define STORAGE_MEDIA_PROBE_INITIAL_MS 250U
 #define STORAGE_MEDIA_PROBE_MAX_MS 30000U
@@ -49,6 +52,7 @@ typedef struct {
     uint32_t admin_down_resources;
     uint32_t admin_transition_resources;
     uint32_t admin_failed_resources;
+    uint32_t retiring; /* Fixed control remains within the64B protected budget. */
     uint64_t start_deadline_ms;
     uint64_t next_probe_ms;
 } storage_service_control_t;
@@ -78,6 +82,11 @@ static volatile bool service_starting;
 static volatile bool service_started;
 static volatile bool service_administratively_enabled = true;
 static volatile uint32_t service_ap_execution_generation;
+/* Nonblocking coordinator admission, never a spin/sleep wait for ownership.
+ * Bind runs independently on the BSP while a prepared start awaits self-test. */
+static volatile uint32_t lifecycle_busy;
+/* Integrity/publication failure is not recoverable by resetting admin flags. */
+static volatile bool lifecycle_failed;
 static critical_object_t media_fingerprints[MAX_DRIVES];
 static uint32_t fingerprint_ready_mask;
 /* Media failure state is published synchronously. Console formatting is
@@ -98,7 +107,7 @@ static bool control_valid(const void *payload, size_t length) {
         return false;
     const storage_service_control_t *control = payload;
     uint32_t valid_resources = (1U << MAX_DRIVES) - 1U;
-    if (control->healthy > 1U ||
+    if (control->healthy > 1U || control->retiring > STORAGE_RETIRE_EXHAUSTED ||
         ((control->quarantined_resources | control->read_only_resources |
           control->recovering_resources | control->admin_down_resources |
           control->admin_transition_resources |
@@ -115,9 +124,12 @@ static bool control_valid(const void *payload, size_t length) {
         return false;
     if (control->pid == 0)
         return control->generation == 0U && control->healthy == 0U &&
-               control->start_deadline_ms == 0U;
+               control->start_deadline_ms == 0U &&
+               control->retiring != STORAGE_RETIRE_PENDING;
     return control->pid > 0 && control->generation != 0U &&
-           (control->healthy != 0U || control->start_deadline_ms != 0U);
+           ((control->healthy != 0U && control->retiring == 0U &&
+             control->start_deadline_ms == 0U) ||
+            (control->healthy == 0U && control->start_deadline_ms != 0U));
 }
 
 static uint32_t media_crc32(const void *data, size_t length) {
@@ -332,13 +344,117 @@ static uint64_t deadline_after(uint64_t now_ms, uint32_t interval_ms) {
         ? UINT64_MAX : now_ms + interval_ms;
 }
 
+static void lifecycle_fail(void) {
+    lifecycle_failed = true;
+    service_administratively_enabled = false;
+    storage_fence_writes();
+    filesystem_fence_mutations();
+}
+
+static bool lifecycle_enter(void) {
+    return !lifecycle_failed && __sync_bool_compare_and_swap(&lifecycle_busy, 0U, 1U);
+}
+
+static void lifecycle_leave(void) {
+    __sync_lock_release(&lifecycle_busy);
+}
+
+static bool retirement_begin(storage_service_control_t *control,
+                             uint64_t now_ms, uint64_t limit_ms,
+                             bool explicit_retry) {
+    if (control->pid == 0) return true;
+    if (control->retiring == STORAGE_RETIRE_EXHAUSTED && !explicit_retry)
+        return false;
+    uint64_t deadline = deadline_after(now_ms, STORAGE_SERVICE_RETIRE_TIMEOUT_MS);
+    if (limit_ms < deadline) deadline = limit_ms;
+    if (deadline == 0U) deadline = 1U;
+    if (control->retiring != STORAGE_RETIRE_PENDING) {
+        control->healthy = 0U;
+        control->retiring = STORAGE_RETIRE_PENDING;
+        control->start_deadline_ms = deadline;
+    } else if (deadline < control->start_deadline_ms) {
+        control->start_deadline_ms = deadline;
+    }
+    /* Revoke bind/raw IO authority before touching IPC or the old task. */
+    if (control_write(control) != 0) {
+        lifecycle_fail();
+        return false;
+    }
+    storage_request_unbind_service(control->pid, control->generation);
+    return true;
+}
+
+/* 1 = reaped/absent, 0 = still retiring, -1 = fenced/exhausted. One scheduling
+ * attempt, no wait in the periodic worker. The exact identity stays published. */
+static int retirement_step(storage_service_control_t *control, uint64_t now_ms) {
+    if (control->pid == 0) return 1;
+    if (control->retiring != STORAGE_RETIRE_PENDING) return -1;
+    int pid = control->pid;
+    uint32_t generation = control->generation;
+    if (!process_identity_alive(pid, generation)) {
+        /* Cleanup can publish resource fences: refresh before clearing only
+         * lifecycle fields, never overwrite media/admin state with a stale copy. */
+        if (control_read(control) != 0 || control->pid != pid ||
+            control->generation != generation) {
+            lifecycle_fail();
+            return -1;
+        }
+        control->pid = 0;
+        control->generation = 0U;
+        control->healthy = 0U;
+        control->retiring = 0U;
+        control->start_deadline_ms = 0U;
+        if (control_write(control) != 0) {
+            lifecycle_fail();
+            return -1;
+        }
+        printf("REIST_STORAGE SERVICE_RETIRED pid=%d generation=%u\n", pid, generation);
+        return 1;
+    }
+    if (now_ms >= control->start_deadline_ms) {
+        control->retiring = STORAGE_RETIRE_EXHAUSTED;
+        storage_fence_writes();
+        filesystem_fence_mutations();
+        if (control_write(control) != 0) {
+            lifecycle_fail();
+            return -1;
+        }
+        printf("REIST_STORAGE RETIREMENT_EXHAUSTED pid=%d generation=%u\n", pid, generation);
+        return -1;
+    }
+    if (process_set_supervised_affinity(pid, generation, TASK_CPU_MASK_BSP) != 0)
+        return 0; /* Already cleaning up or still unavailable: not reap proof. */
+    if (process_terminate_identity(pid, generation) != 0)
+        return 0; /* CPU-owned/handoff: retain authority denial and retry later. */
+    return 0;     /* Successful termination still requires a later reap check. */
+}
+
 static bool spawn_service(storage_service_control_t *control,
                           uint64_t now_ms) {
+    if (control->pid != 0 || control->retiring != 0U ||
+        control->launch_count > STORAGE_SERVICE_RESTART_BUDGET) return false;
     const char *arguments[] = {"storage.prg"};
-    int pid = supervisor_spawn_service("/libexec/reist/storage.prg", 1, arguments,
-                                       PROCESS_DOMAIN_STORAGE);
+    int pid = process_spawn_supervised_prepared("/libexec/reist/storage.prg", 1,
+                                               arguments, PROCESS_DOMAIN_STORAGE);
     uint32_t generation = 0U;
-    if (pid <= 0 || process_get_identity(pid, &generation) != 0) return false;
+    if (pid <= 0) {
+        if (control_read(control) != 0) lifecycle_fail();
+        return false;
+    }
+    if (process_get_identity(pid, &generation) != 0) {
+        /* A prepared task cannot execute; never start another after loss of
+         * its identity proof. This is integrity failure, not a retryable spawn. */
+        lifecycle_fail();
+        return false;
+    }
+    /* Loading the prepared image can report a media failure. Retain those
+     * fences instead of publishing the snapshot from before the VFS call. */
+    if (control_read(control) != 0 || control->pid != 0 ||
+        control->retiring != 0U) {
+        lifecycle_fail();
+        if (process_terminate_identity(pid, generation) != 0) return false;
+        return false;
+    }
     control->pid = pid;
     control->generation = generation;
     control->healthy = 0U;
@@ -346,13 +462,24 @@ static bool spawn_service(storage_service_control_t *control,
     control->start_deadline_ms = deadline_after(
         now_ms, STORAGE_SERVICE_START_TIMEOUT_MS);
     if (control_write(control) != 0) {
-        (void)process_terminate(pid);
+        lifecycle_fail();
+        /* No runnable admission occurred. Failed publication cannot orphan
+         * a running worker; exact cleanup refusal remains fenced. */
+        if (process_terminate_identity(pid, generation) != 0) return false;
+        return false;
+    }
+    if (process_start_prepared_supervised(pid, generation) != 0) {
+        if (!retirement_begin(control, now_ms, UINT64_MAX, false)) {
+            storage_fence_writes();
+            filesystem_fence_mutations();
+        }
         return false;
     }
     return true;
 }
 
 bool storage_service_init(void) {
+    if (initialized) return true;
     storage_service_control_t control = {0};
     if (critical_object_init(&protected_control,
             STORAGE_SERVICE_CONTROL_VERSION, &control,
@@ -380,15 +507,24 @@ bool storage_service_inventory_media(void) {
     return control_write(&control) == 0;
 }
 
+static bool storage_start_locked(uint64_t);
+
 bool storage_service_start(uint64_t now_ms) {
+    if (!lifecycle_enter()) return false;
+    bool result = storage_start_locked(now_ms);
+    lifecycle_leave();
+    return result;
+}
+
+static bool storage_start_locked(uint64_t now_ms) {
     if (!initialized || !service_administratively_enabled ||
         service_starting || service_started) return false;
     if (!admin_maintenance_init()) return false;
     service_starting = true;
-    storage_service_control_t control;
+    storage_service_control_t control = {0};
     bool result = control_read(&control) == 0 && control.pid == 0 &&
                   spawn_service(&control, now_ms);
-    service_started = result;
+    service_started = result || (control.pid > 0);
     service_starting = false;
     return result;
 }
@@ -398,6 +534,7 @@ int storage_service_bind(int pid, uint32_t generation) {
     if (!initialized || !service_administratively_enabled ||
         control_read(&control) != 0 || control.pid != pid ||
         control.generation != generation || control.healthy != 0U ||
+        control.retiring != 0U || pit_monotonic_ms() >= control.start_deadline_ms ||
         !process_identity_alive(pid, generation)) return -13;
     int result = storage_request_bind_service(pid, generation);
     if (result != 0) return result;
@@ -432,7 +569,7 @@ bool storage_service_authorized(int pid, uint32_t generation) {
     storage_service_control_t control;
     bool authorized = initialized && service_administratively_enabled &&
            control_read(&control) == 0 &&
-           control.healthy != 0U && control.pid == pid &&
+           control.healthy != 0U && control.retiring == 0U && control.pid == pid &&
            control.generation == generation &&
            process_identity_alive(pid, generation);
     if (authorized && x86_cpu_current_index() != 0U &&
@@ -848,56 +985,54 @@ static void poll_media_reintegration(uint64_t now_ms) {
 
 void storage_service_poll(uint64_t now_ms) {
     static uint32_t observed_object_fences;
-    if (!initialized) return;
-    if (vfs_file_object_guard_poll(now_ms) != 0) return;
+    if (!initialized || !lifecycle_enter()) return;
+    if (vfs_file_object_guard_poll(now_ms) != 0) goto done;
     storage_service_emit_pending_quarantine();
     poll_media_reintegration(now_ms);
-    if (!service_administratively_enabled) return;
-    if (!service_started || service_starting) return;
+    if (!service_administratively_enabled) goto done;
+    if (!service_started || service_starting) goto done;
     storage_service_control_t control;
     if (control_read(&control) != 0) {
         storage_fence_writes();
         filesystem_fence_mutations();
-        return;
+        goto done;
     }
     uint32_t object_fences = 0U;
-    if (vfs_file_object_guard_fenced(&object_fences) != 0) return;
+    if (vfs_file_object_guard_fenced(&object_fences) != 0) goto done;
     if ((object_fences & ~observed_object_fences) != 0U) {
         /* The VFS guard has already published quarantine before dropping its
          * mutex. A timed-out mutation must not leave a healthy-looking but
          * hung Storage process serving unrelated volumes indefinitely. */
-        if (control.pid > 0) {
-            storage_request_unbind_service(control.pid, control.generation);
-            if (process_identity_alive(control.pid, control.generation))
-                (void)process_terminate(control.pid);
-            control.healthy = 0U;
-            control.start_deadline_ms = 0U;
-        }
+        if (!retirement_begin(&control, now_ms, UINT64_MAX, false)) goto done;
         observed_object_fences |= object_fences;
     }
+    if (control.retiring == STORAGE_RETIRE_EXHAUSTED) goto done;
     if (control.pid != 0 && process_identity_alive(
             control.pid, control.generation) &&
-        (control.healthy != 0U || now_ms < control.start_deadline_ms)) return;
+        control.retiring == 0U &&
+        (control.healthy != 0U || now_ms < control.start_deadline_ms)) goto done;
 
     if (control.pid != 0) {
-        storage_request_unbind_service(control.pid, control.generation);
-        if (process_identity_alive(control.pid, control.generation))
-            (void)process_terminate(control.pid);
-        printf("REIST_STORAGE SERVICE_FAILURE_DETECTED\n");
+        if (control.retiring == 0U) {
+            if (!retirement_begin(&control, now_ms, UINT64_MAX, false)) goto done;
+            printf("REIST_STORAGE SERVICE_FAILURE_DETECTED\n");
+        }
+        if (retirement_step(&control, now_ms) != 1) goto done;
     }
-    control.pid = 0;
-    control.generation = 0U;
-    control.healthy = 0U;
-    control.start_deadline_ms = 0U;
     if (control.launch_count > STORAGE_SERVICE_RESTART_BUDGET ||
         !spawn_service(&control, now_ms)) {
         storage_fence_writes();
         filesystem_fence_mutations();
-        (void)control_write(&control);
+        /* A published failed-start identity must still retire; an absent
+         * exhausted service must not print/retry on every supervisor tick. */
+        if (control.pid == 0) control.retiring = STORAGE_RETIRE_EXHAUSTED;
+        if (control_write(&control) != 0) service_administratively_enabled = false;
         printf("REIST_STORAGE SERVICE_DEGRADED\n");
     } else if (control.launch_count > 1U) {
         printf("REIST_STORAGE SERVICE_RESTARTED\n");
     }
+done:
+    lifecycle_leave();
 }
 
 bool storage_service_component_ready(void) {
@@ -908,22 +1043,28 @@ bool storage_service_component_ready(void) {
            process_identity_alive(control.pid, control.generation);
 }
 
-bool storage_service_component_down(uint64_t deadline_ms) {
-    (void)deadline_ms;
+static bool storage_down_locked(uint64_t deadline_ms) {
     if (!initialized) return false;
     service_administratively_enabled = false;
     __asm__ volatile("" ::: "memory");
     storage_service_control_t control;
     if (control_read(&control) != 0) return false;
     if (control.pid > 0) {
-        storage_request_unbind_service(control.pid, control.generation);
-        if (process_identity_alive(control.pid, control.generation) &&
-            process_terminate(control.pid) != 0) return false;
+        if (!retirement_begin(&control, pit_monotonic_ms(), deadline_ms, true))
+            return false;
+        for (;;) {
+            int result = retirement_step(&control, pit_monotonic_ms());
+            if (result < 0) return false;
+            if (result == 1) break;
+            if (scheduler_sleep_ms(5U) != 0 || control_read(&control) != 0)
+                return false;
+        }
     }
     control.pid = 0;
     control.generation = 0U;
     control.healthy = 0U;
     control.start_deadline_ms = 0U;
+    control.retiring = 0U;
     control.post_ready_cpu_affinity_mask = 0U;
     if (control_write(&control) != 0) return false;
     service_started = false;
@@ -931,36 +1072,43 @@ bool storage_service_component_down(uint64_t deadline_ms) {
     return !storage_service_component_ready();
 }
 
+bool storage_service_component_down(uint64_t deadline_ms) {
+    if (!lifecycle_enter()) return false;
+    bool result = storage_down_locked(deadline_ms);
+    lifecycle_leave();
+    return result;
+}
+
 bool storage_service_component_up(uint64_t deadline_ms) {
     if (!initialized || pit_monotonic_ms() >= deadline_ms) return false;
-    if (storage_service_component_ready()) return true;
-    storage_service_control_t control;
-    if (control_read(&control) != 0) return false;
-    if (control.pid > 0) {
-        storage_request_unbind_service(control.pid, control.generation);
-        if (process_identity_alive(control.pid, control.generation))
-            (void)process_terminate(control.pid);
+    if (!lifecycle_enter()) return false;
+    bool result = false;
+    if (storage_service_component_ready()) {
+        result = true;
+        goto done;
     }
-    control.pid = 0;
-    control.generation = 0U;
-    control.healthy = 0U;
+    if (!storage_down_locked(deadline_ms)) goto done;
+    storage_service_control_t control;
+    if (control_read(&control) != 0) goto done;
     control.launch_count = 0U;
-    control.start_deadline_ms = 0U;
-    control.post_ready_cpu_affinity_mask = 0U;
-    if (control_write(&control) != 0) return false;
-    service_started = false;
-    service_starting = false;
+    if (control_write(&control) != 0) goto done;
     service_administratively_enabled = true;
     __asm__ volatile("" ::: "memory");
-    if (!storage_service_start(pit_monotonic_ms())) {
-        service_administratively_enabled = false;
-        return false;
-    }
+    if (!storage_start_locked(pit_monotonic_ms())) goto cleanup;
+    uint64_t ready_deadline = deadline_after(pit_monotonic_ms(), STORAGE_SERVICE_START_TIMEOUT_MS);
+    if (deadline_ms < ready_deadline) ready_deadline = deadline_ms;
     while (!storage_service_component_ready() &&
-           pit_monotonic_ms() < deadline_ms) {
-        if (scheduler_sleep_ms(5U) != 0) (void)scheduler_yield();
+           pit_monotonic_ms() < ready_deadline) {
+        if (scheduler_sleep_ms(5U) != 0) break;
     }
-    if (storage_service_component_ready()) return true;
-    (void)storage_service_component_down(deadline_ms);
-    return false;
+    result = storage_service_component_ready();
+    if (result) goto done;
+cleanup:
+    if (!storage_down_locked(deadline_ms)) {
+        storage_fence_writes();
+        filesystem_fence_mutations();
+    }
+done:
+    lifecycle_leave();
+    return result;
 }

@@ -2,15 +2,68 @@
 
 Stand: 9. September 2026
 
-## R3.39 eingefroren: Storage-Generation vor Ersatz wirklich stilllegen
+## R3.39 abgenommen: alte Storage-Generation vor Ersatz wirklich stilllegen
 
-Auf08c8c364 sauber inventarisiert. poll/up ignorieren die Ablehnung einer
-Terminierung und koennen die noch vorhandene Identitaet durch einen Neustart
-ersetzen. Der naechste zusammenhaengende Schnitt schliesst automatische und
-manuelle Stilllegung, Fristablauf, Reap und fehlgeschlagenen Start gemeinsam.
-Vertrag: STORAGE_GENERATION_RETIREMENT_CONTRACT.md;12 eingefrorene Gruppen.
-Noch keine Implementierungsabnahme. R3.6b bleibt ausdruecklich zurueckgestellt;
-persistenter Ring-3-Backend und JS-Schreibrechte folgen erst nach dieser Grenze.
+Alle12 eingefrorenen Gruppen bestanden. Ausgangspunkt08c8c364, sauberer
+Vertragscheckpoint8fea0578. Automatische und manuelle Recovery widerrufen
+zuerst die alte Autoritaet, fordern BSP-Affinitaet an und behalten PID/Generation
+bis zum Reap. Erfolgreiche Terminierung allein gilt nicht mehr als Reap.
+Nach1000ms bleibt eine nicht stilllegbare Generation gesperrt und registriert.
+Ein Integritaets-/Publikationsfehler bleibt auch ueber manuelles Up gesperrt.
+Prepared-Spawn publiziert Identitaet vor Runnable; keine parallelen Ersatzdienste.
+Neue interne generationsgenaue Termination; alter Aufruf/Syscalls unveraendert.
+
+Belege unter `build/codex-agent/r339-storage-retirement/`:
+
+| Gruppe | PASS / Sekunden | Finaler Beleg |
+| --- | --- | --- |
+| test_storage_retirement.py -v |4 Tests, O0/O2 /1.458 |parser-green.log |
+| test_reist_storage_service.py -v |7 Tests /0.007 |test_reist_storage_service-final.log |
+| test_reist_storage_recovery.py -v |18 Tests /0.010 |test_reist_storage_recovery-final.log |
+| test_file_object_guard.py -v |8 Tests /25.688 |targeted-resume-2.log |
+| measure_cpp_baseline.py --host-test test/test_smp.py -v |31 Tests /6.665 |targeted-resume-3.log |
+| test_syscall_abi_source.py -v |0.260 |targeted-resume-4.log |
+| test-reist-package.ps1 -Target vmware -Video vga |22 |package-vmware-final.log; ../20260909-074123-package-vmware-vga.log |
+| test-reist-package.ps1 -Target qemu -Video vga |77 |package-qemu-final.log; ../20260909-074145-package-qemu-vga.log |
+| verify_storage_retirement_artifacts.py --evidence .../artifacts |1.517 |artifacts/protected.json |
+| run_qemu_storage_retirement.py --evidence .../guest-final |5 Faelle,21 Shellbefehle /107.735 |guest-final/result.json |
+| run_qemu_js_runner.py --file-capabilities |129.432 |js-runner.log; compatibility-0.log |
+| run_qemu_browser_external.py |103.090 |browser.log; compatibility-1.log |
+
+Vollstaendige Argumente einschliesslich QEMU-Pfad/Referenzimage bleiben in der
+Queue; nur der korrigierte Gast-Belegordner heisst guest-final statt guest.
+Fristen/Erfolgskriterien bleiben erhalten. Native Red-Belege: ../r339-storage-
+retirement-red.log zeigt tatsaechlichen Ersatz trotz abgelehnter Terminierung;
+publication-red.log zeigt alte Autoritaet nach fehlgeschlagener Publikation.
+targeted-2.log ist ein erhalten gebliebener Source-Scanner-Fehler nach der
+Helperextraktion; der gemeinsame Startkoerper liegt wieder im geprueften
+Startabschnitt. Kein bestehender Test oder dessen Anforderung geloescht.
+Der erste VMware-Build bestand, wurde nach der Publikationskorrektur ersetzt.
+
+Der erste Gastlauf scheiterte ausschliesslich an einem unlesbaren AP-Marker:
+vollstaendige GUI- und Storage-Meldungen waren zeichenweise verschachtelt.
+guest/result.json bleibt FAIL. Der neue lokale Pruefer akzeptiert nur die
+exakte Mischung zweier bekannter vollstaendiger Records mit erhaltener
+Zeichenreihenfolge, maximal192 Zeichen je Record/64 Kandidaten. Keine beliebige
+Substring- oder Fuzzy-Suche; falsche CPU/Generation, beschaedigte Records und
+Replacement vor Retirement bleiben negativ. parser-final.log bewahrt eine
+danach korrigierte Negativfixture, die ein Zeichen NACH einem bereits kompletten
+gueltigen Record falsch als Fehler behandelte. parser-green.log und voller
+anschliessender1-/4-CPU-Gast bestehen.
+
+Alle93 Programme bleiben bytegleich zu R3.38; beide realen Imagekernel stimmen
+mit dem jeweiligen Neubuild ueberein. Scheduler.c/.h und CPU-Local-Header sind
+quelltextgleich. Keine neue VMware-Durchsatz-/Hardware-WCET-/Remote-Kill-Garantie.
+Bei allen vier Fault/Hang-Faellen bleibt das private EXT2-Medium exakt im
+erwarteten Zustand SHA256 d2549e5371ec94698d3aa3eb4f1babe5cd851b2d5db4988e677cc6432a69872d.
+AP-Ausfuehrung ist fuer Original und automatischen Ersatz belegt; der vorhandene
+manuelle Down/Up-Reset loescht die AP-Zielmaske weiterhin absichtlich.
+
+R3.39 ist abgeschlossen. R3.6b bleibt trotz formalem Next-Queued-Uebergang
+ausdruecklich ausfuehrungszurueckgestellt. Als naechstes den persistenten
+Ring-3-Backend samt exklusiver Journalhoheit festlegen; FAT-Standardimages
+nicht durch einen stillen EXT2-only-Nachweis ersetzen. JS-Schreibrechte fehlen
+weiterhin und folgen erst nach Backendabnahme. Nichts gepusht.
 
 ## R3.38 abgenommen: gemeinsame Dateiobjekt-Lebensdauer
 

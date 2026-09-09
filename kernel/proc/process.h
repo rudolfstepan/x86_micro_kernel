@@ -170,6 +170,8 @@ int process_set_supervised_affinity(int pid, uint32_t generation,
 bool process_syscall_allowed(const Process *process, uint32_t syscall_index);
 int process_restrict_script(Process *process);
 int process_terminate_authorized(Process *requester, int pid);
+/* Atomic exact-generation reservation; success is termination, not reap. */
+int process_terminate_identity(int pid, uint32_t generation);
 int process_get_identity(int pid, uint32_t *generation_out);
 bool process_identity_alive(int pid, uint32_t generation);
 /* New grants exclude exiting owners; the generic liveness query above retains

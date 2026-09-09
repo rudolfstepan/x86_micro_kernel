@@ -11,10 +11,11 @@ Ring-3-Objektbroker und alle zwölf Prüfgruppen. Nur ausdrücklich gewählte
 reguläre Dateien sind lesbar; persistente Schreib-/Verzeichnisrechte fehlen
 weiterhin und bleiben zwingende JS3-Folgearbeit vor JS4.
 
-R3.39 ist als naechste Voraussetzung eingefroren: alte Storage-Generation
-vor Ersatz widerrufen, quieszent machen und Reap nachweisen; bei Fristablauf
-Identitaet behalten und sperren. Erst danach persistenter Backend und explizite
-JS-Schreibrechte. Details/12 Abnahmegruppen im Retirement-Vertrag und der Queue.
+R3.39 ist mit allen12 Gruppen abgenommen: alte Storage-Generation vor Ersatz
+widerrufen, quieszent machen und Reap nachweisen; bei Fristablauf Identitaet
+behalten und sperren. Echte1-/4-CPU-Gaeste, JS-Datei-Runner und Browser bestehen.
+Als naechstes persistenter Backend und danach explizite JS-Schreibrechte.
+Details/Belege im Retirement-Vertrag, CURRENT_WORK und der Queue.
 
 ## Ziel und Sicherheitsgrenze
 

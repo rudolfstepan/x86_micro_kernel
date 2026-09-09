@@ -152,3 +152,7 @@ diese gemeinsame Retirement-/Reap-Grenze; siehe
 [STORAGE_GENERATION_RETIREMENT_CONTRACT.md](STORAGE_GENERATION_RETIREMENT_CONTRACT.md).
 FAT12 und FAT32 besitzen unterschiedliche Journal-/Remapmodelle. Reuse des
 transportneutralen FAT32-Kerns allein uebertraegt keine Journalhoheit nach Ring3.
+R3.39 ist mit allen12 Gruppen und echten1-/4-CPU-Gaesten abgenommen. Abgelehnte
+Terminierung oder noch laufendes Reap erlauben keinen Ersatz mehr; Fehler beim
+Publizieren des Widerrufs bleiben auch ueber manuelles Up gesperrt. Persistenter
+Backend und JS-Schreibrechte sind dadurch vorbereitet, nicht implementiert.

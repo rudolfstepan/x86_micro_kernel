@@ -1736,14 +1736,15 @@ int process_get_info(uint32_t index, process_info_t *info) {
     return process_get_info_for(NULL, index, info);
 }
 
-int process_terminate(int pid) {
+static int process_terminate_generation(int pid, uint32_t generation) {
     if (pid <= 0) return -1;
     KASSERT_NOT_IRQ();
     scheduler_preempt_disable();
     uint32_t flags = process_table_lock_irqsave();
     for (int i = 0; i < MAX_PROGRAMS; i++) {
         if (process_list[i].is_running && !process_list[i].terminating &&
-            process_list[i].pid == pid) {
+            process_list[i].pid == pid &&
+            (generation == 0U || process_list[i].generation == generation)) {
             int task_id = process_list[i].task_id;
             int task_state;
             if (scheduler_task_state_snapshot(
@@ -1782,6 +1783,15 @@ int process_terminate(int pid) {
     process_table_unlock_irqrestore(flags);
     scheduler_preempt_enable();
     return -1;
+}
+
+int process_terminate(int pid) {
+    return process_terminate_generation(pid, 0U);
+}
+
+int process_terminate_identity(int pid, uint32_t generation) {
+    if (generation == 0U) return -1;
+    return process_terminate_generation(pid, generation);
 }
 
 int process_terminate_authorized(Process *requester, int pid) {

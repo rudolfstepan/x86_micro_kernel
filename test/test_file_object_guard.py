@@ -46,7 +46,9 @@ class FileObjectGuardTests(unittest.TestCase):
                                 ("terminate", "void scheduler_terminate_task(")):
             (evidence / ("scheduler_" + name + ".inc")).write_text(function(scheduler, signature), encoding="utf-8")
         process = (ROOT / "kernel/proc/process.c").read_text(encoding="utf-8")
-        (evidence / "process_terminate.inc").write_text(function(process, "int process_terminate("), encoding="utf-8")
+        (evidence / "process_terminate.inc").write_text(
+            function(process, "static int process_terminate_generation(") + "\n" +
+            function(process, "int process_terminate("), encoding="utf-8")
         failures = []
         for optimization in ("-O0", "-O2"):
             executable = evidence / (optimization + ".exe")

@@ -32,8 +32,8 @@ remote-kill mechanism, journal implementation, filesystem policy or JS rights.
   No sleep/spin loop in the periodic supervisor poll. Cleanup may use existing
   bounded sleepable mechanisms outside locks.
 - Retirement has a1000ms monotonic deadline, capped by an earlier admin limit.
-  One protected retirement field uses the former four-byte alignment gap;
-  control remains64bytes, private version increments. Startup and retirement
+  One protected retirement field fits the64-byte budget (the host alignment
+  gap; i386 grows from60 to64bytes), private version increments. Startup and retirement
   deadlines share the existing field in mutually exclusive states.
 - On timeout, retain identity in an exhausted state, deny old bind/raw IO and
   replacement, emit one bounded diagnosis, apply existing write fences. Polls
@@ -45,6 +45,8 @@ remote-kill mechanism, journal implementation, filesystem policy or JS rights.
   callable during startup; it rejects retiring/exhausted identities.
 - Prepared task identity is published before runnable admission. Publication
   or start failure never creates an untracked runnable Storage worker.
+  Loss of the protected identity/publication proof sets a sticky integrity
+  denial; manual up/init cannot retry past an unknown prepared identity.
 - Preserve resource quarantine/admin bits across slow calls and keep the
   desired post-ready AP mask across automatic replacements. Restore authority
   only through the existing fresh-generation self-test/bind.
@@ -82,3 +84,13 @@ FAT12 has a distinct64-entry journal plus remap/replicas, not the same protocol.
 EXT2 already has Ring3 namespace journal v1, not a general data-write planner.
 Future backend selection must explicitly address default FAT images and
 exclusive journal ownership; EXT2-only proof cannot stand in for FAT writes.
+
+## Acceptance, 9 September2026
+
+All12 frozen groups passed after contract checkpoint8fea0578. Exact final
+commands/times and retained red/failed runs are recorded in CURRENT_WORK R3.39.
+The final five-case guest is guest-final/result.json,107.735s; the initial guest
+remains failed. Only its new verifier was corrected to validate an exact bounded
+two-record AP/GUI shuffle. No generation/order/CPU/deadline requirement removed.
+Both images/new kernels/all93 unchanged programs verified. JS-file and browser
+guests pass. No writable JS API, new format or forcible AP-kill claim.
