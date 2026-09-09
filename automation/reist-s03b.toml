@@ -1,7 +1,7 @@
 version = 1
 program = "S0-assurance-completion"
-active_id = "R3.6b-vmware-pointer-pinned-mutex"
-next_user_request = "2026-09-09: R3.39 Storage retirement accepted, all12 groups. Continue with the explicit persistent Ring-3 backend contract and implementation before JS writes; default FAT images and exclusive journal ownership must be addressed. R3.6b remains execution-deferred despite the formal next-queued transition. No agents or push."
+active_id = "R3.40-fat32-recovery-admission"
+next_user_request = "2026-09-09: Continue JS3 persistent backend. R3.40 first repairs the inventoried portable FAT32 journal admission failures before reuse: no partial undo on malformed evidence, no journal self-target or owner loss. Default FAT32 backend/exclusive journal handoff and JS writes remain subsequent work. R3.6b stays execution-deferred. Direct main worktree, no agents or push."
 
 [policy]
 one_package_per_run = true
@@ -10,6 +10,22 @@ allow_parallel_writers = false
 max_read_only_reviewers = 1
 external_writes = false
 push = false
+
+[[packages]]
+id = "R3.40-fat32-recovery-admission"
+status = "active"
+phase = "post-s0"
+risk = "high"
+title = "Validate the complete portable FAT32 undo recovery before effects"
+scope = "Read FAT32_RECOVERY_ADMISSION_CONTRACT fully. Fix existing journal recovery admission, including bounded geometry, v1 upgrade, protected targets, duplicate targets, all-beforeimage validation and live-owner reattach refusal. No Ring-3 write API or second journal owner."
+allowed_files = ["automation/reist-s03b.toml","docs/development/CURRENT_WORK.md","docs/development/OS_JAVASCRIPT_SCRIPTING_WORK_PAPER.md","docs/architecture/RING3_FILE_WRITE_CONTRACT.md","docs/architecture/FAT32_RECOVERY_ADMISSION_CONTRACT.md","drivers/block/ata_journal.c","test/test_fat32_recovery_admission.py","test/fat32_recovery_admission_host.c","scripts/run_qemu_fat32_recovery_admission.py","scripts/verify_fat32_recovery_artifacts.py"]
+invariants = ["Keep v1 reader/v2 disk format, 20-entry fixed buffers, existing header selection and normal read/write/transaction hotpaths. Admission failure before recovery effects has zero writes/flushes. Recovery write failure retains retryable ACTIVE evidence. Reject pending-owner reattach before any state change.","No new syscall, persistent format, kernel parser/driver, journal owner or JS right. Existing legacy journal is explicit migration debt. Ring-3 read parser is not claimed to gain journal recovery admission.","Clean visible main worktree baseline c1130a39. No agents, visible VMs, native error dialogs, unrelated changes or push; retain evidence."]
+targeted_tests = ["python test/test_fat32_recovery_admission.py -v","python test/test_reist_undo_journal.py -v","python scripts/measure_cpp_baseline.py --host-test test/test_fs_host.py FilesystemHostTests.test_fat32_write_truncate_and_directory_extension -v","python test/test_fat32_image_fault_campaign.py -v"]
+package_tests = [".\\scripts\\test-reist-package.ps1 -Target vmware -Video vga",".\\scripts\\test-reist-package.ps1 -Target qemu -Video vga"]
+runtime_tests = ["python scripts/verify_fat32_recovery_artifacts.py --evidence build/codex-agent/r340-fat32-recovery/artifacts","python scripts/run_qemu_fat32_recovery_admission.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --evidence build/codex-agent/r340-fat32-recovery/guest","python scripts/run_qemu_js_runner.py --file-capabilities --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r340-fat32-recovery/js-runner.log","python scripts/run_qemu_browser_external.py --qemu 'C:/Program Files/qemu/qemu-system-i386.exe' --image build/reist-os.img --log build/codex-agent/r340-fat32-recovery/browser.log"]
+acceptance = "All10 frozen groups. Actual core O0/O2 malformed admission and every recovery write cut/retry; existing complete FAT32 whole-image fault campaign. Both reference images with new matching kernels and all93 unchanged PRGs; unchanged scheduler and normal journal hotpaths. Headless1024MiB guest valid v1/v2 and late-CRC/mirror/duplicate rejection on standard-size private FAT32 media, exact whole-disk results, repeated legacy mount refusal and independent shell/read across Storage restart. Existing JS-file/browser guests. Archive/review before done and local commit. No hardware durability/performance or Ring-3 journal-admission claim."
+stop_conditions = ["Unattributed or overlapping changes", "Source outside allowed_files required", "Failed gate without focused correction", "New persistent format or journal ownership needed"]
+commit_message = "fix: validate complete FAT32 recovery before disk effects"
 
 [[packages]]
 id = "R3.39-storage-generation-retirement"
@@ -2390,7 +2406,7 @@ evidence = []
 
 [[packages]]
 id = "R3.6b-vmware-pointer-pinned-mutex"
-status = "active"
+status = "queued"
 browser_priority = "2026-09-05: User explicitly approves deferring this incomplete VMware acceptance with all requirements unchanged and prioritizing the new browser without repeated routine handoffs. The resumed host suites passed (141/144, three optional skips), reference build passed, but real RFB hover still failed to acknowledge Start. Preserve these open runtime gates; do not claim acceptance or return to this package ahead of the browser migration."
 deferral = "User switches explicitly to browser improvements after committing 7b365f3b. Keep this incomplete acceptance queued with its original gates; do not mark it done."
 phase = "post-s0"

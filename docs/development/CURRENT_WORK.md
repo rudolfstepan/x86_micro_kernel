@@ -2,6 +2,15 @@
 
 Stand: 9. September 2026
 
+## R3.40 aktiv: gesamte FAT32-Recovery vor Schreibwirkungen pruefen
+
+Inventur auf sauberem c1130a39 findet partielle Undo-Schreibwirkungen vor einem
+spaeteren CRC-/Lesefehler, ungeschuetzte Journalziele und Ownerverlust bei
+abgelehntem Reattach. Der transportneutrale bestehende Kern wird vor seiner
+Ring-3-Wiederverwendung abgesichert. Vertrag: FAT32_RECOVERY_ADMISSION_CONTRACT;
+zehn eingefrorene Gruppen in der Queue. Default-FAT32-Backend, exklusive
+Journaluebergabe und JS-Schreibrechte bleiben danach erforderlich.
+
 ## R3.39 abgenommen: alte Storage-Generation vor Ersatz wirklich stilllegen
 
 Alle12 eingefrorenen Gruppen bestanden. Ausgangspunkt08c8c364, sauberer

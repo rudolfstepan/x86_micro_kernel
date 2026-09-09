@@ -156,3 +156,13 @@ R3.39 ist mit allen12 Gruppen und echten1-/4-CPU-Gaesten abgenommen. Abgelehnte
 Terminierung oder noch laufendes Reap erlauben keinen Ersatz mehr; Fehler beim
 Publizieren des Widerrufs bleiben auch ueber manuelles Up gesperrt. Persistenter
 Backend und JS-Schreibrechte sind dadurch vorbereitet, nicht implementiert.
+
+Inventur aufc1130a39: Default-FAT32 verwendet den transportneutralen20-Sektor-
+Undo-Kern, aber dessen Recovery schreibt vor abgeschlossener Validierung aller
+Eintraege und schuetzt Spiegelheader/v1-Journalziele nicht vollstaendig.
+R3.40 repariert diese bestehende Grenze vor Wiederverwendung; siehe
+[FAT32_RECOVERY_ADMISSION_CONTRACT.md](FAT32_RECOVERY_ADMISSION_CONTRACT.md).
+Der aktuelle Raw-Syscall durchlaeuft den alten Journalowner; ein zweites Journal
+in Storage waere unzulaessig. Default-FAT32 ist der erste Backend-Kandidat,
+FAT12 hat ein separates Journal-/Remapprotokoll. Die exklusive Uebergabe und
+Objekt-Schreibadmission bleiben der anschliessende Implementierungsschnitt.
